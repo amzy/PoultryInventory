@@ -31,14 +31,12 @@ class _LogFormScreenState extends State<LogFormScreen> {
     final provider = Provider.of<PoultryProvider>(context, listen: false);
     if (provider.logs.isNotEmpty) {
       final lastLog = provider.logs.first;
-      _startingBirdsController.text = lastLog.endingBirds.toString();
-      // Calculate flock start date from last log
-      // If last log: date=yesterday, age=130, then flock started 130 days ago
       _flockStartDate = lastLog.date.subtract(Duration(days: lastLog.flockAge));
     } else {
-      // First log ever: flock starts today
+      // First log ever: there is no previous day's bird count to calculate from.
       _flockStartDate = DateTime.now();
     }
+    _updateStartingBirdsForDate(_selectedDate);
   }
 
   int _calculateFlockAge() {
@@ -65,14 +63,23 @@ class _LogFormScreenState extends State<LogFormScreen> {
                     firstDate: DateTime(2020),
                     lastDate: DateTime.now(),
                   );
-                  if (date != null) setState(() => _selectedDate = date);
+                  if (date != null) {
+                    setState(() {
+                      _selectedDate = date;
+                      _updateStartingBirdsForDate(date);
+                    });
+                  }
                 },
               ),
               ListTile(
                 title: Text('Flock Age: ${_calculateFlockAge()} Days'),
                 subtitle: Text('Auto-calculated from date'),
               ),
-              _buildTextField(_startingBirdsController, 'Starting Birds', TextInputType.number),
+              _buildReadOnlyField(
+                _startingBirdsController,
+                'Starting Birds',
+                'Auto: previous day Starting Birds - Mortality',
+              ),
               _buildTextField(_mortalityController, 'Mortality', TextInputType.number),
               _buildTextField(_traysController, 'Trays (30 Eggs)', TextInputType.numberWithOptions(decimal: true)),
               _buildTextField(_avgTrayWeightController, 'Avg Tray Weight (g)', TextInputType.numberWithOptions(decimal: true)),
@@ -88,6 +95,59 @@ class _LogFormScreenState extends State<LogFormScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+
+  /// Starting birds are never entered manually. For a daily entry, they are
+  /// calculated from the latest log before the selected date:
+  /// previous day's Starting Birds - previous day's Mortality.
+  void _updateStartingBirdsForDate(DateTime date) {
+    final provider = Provider.of<PoultryProvider>(context, listen: false);
+    PoultryLog? previousLog;
+
+    for (final log in provider.logs) {
+      final logDate = DateTime(log.date.year, log.date.month, log.date.day);
+      final selected = DateTime(date.year, date.month, date.day);
+      if (logDate.isBefore(selected) &&
+          (previousLog == null || logDate.isAfter(DateTime(
+            previousLog!.date.year,
+            previousLog!.date.month,
+            previousLog!.date.day,
+          )))) {
+        previousLog = log;
+      }
+    }
+
+    if (previousLog == null) {
+      _startingBirdsController.text = '';
+    } else {
+      final calculated = previousLog.startingBirds - previousLog.mortality;
+      _startingBirdsController.text = calculated.clamp(0, 1000000000).toString();
+    }
+  }
+
+  Widget _buildReadOnlyField(
+    TextEditingController controller,
+    String label,
+    String helperText,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: TextFormField(
+        controller: controller,
+        readOnly: true,
+        enabled: true,
+        decoration: InputDecoration(
+          labelText: label,
+          helperText: helperText,
+          border: const OutlineInputBorder(),
+          suffixIcon: const Icon(Icons.lock_outline),
+        ),
+        validator: (value) => value == null || value.isEmpty
+            ? 'No previous daily log found for this date'
+            : null,
       ),
     );
   }
@@ -109,6 +169,12 @@ class _LogFormScreenState extends State<LogFormScreen> {
 
     final startingBirds = int.parse(_startingBirdsController.text);
     final mortality = int.parse(_mortalityController.text);
+    if (mortality > startingBirds) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mortality cannot be greater than Starting Birds')),
+      );
+      return;
+    }
     final endingBirds = startingBirds - mortality;
     
     final trays = double.parse(_traysController.text);
