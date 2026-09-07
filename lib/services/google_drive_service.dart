@@ -516,6 +516,89 @@ class GoogleDriveService {
   String _normalizeHeader(Object? value) =>
       value?.toString().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') ?? '';
 
+  /// Converts one row from an expense/sales sheet into the common
+  /// ExpenseSalesLog model used by the dashboard. The write path uses the
+  /// same logical fields, so the dashboard reads back the values that were
+  /// actually entered rather than calculated totals/formulas.
+  ExpenseSalesLog? _mapExpenseRow(String sheetName, List<Object?> row) {
+    if (row.isEmpty) return null;
+
+    final date = _parseDate(row.isNotEmpty ? row[0] : null);
+    if (date == null) return null;
+
+    Object? valueAt(int index) => index < row.length ? row[index] : null;
+
+    double parseNumber(Object? value) {
+      if (value == null) return 0.0;
+      final text = value.toString().trim();
+      if (text.isEmpty) return 0.0;
+      return double.tryParse(text.replaceAll(',', '')) ?? 0.0;
+    }
+
+    String textAt(int index) => valueAt(index)?.toString().trim() ?? '';
+
+    switch (sheetName) {
+      case medicalSheet:
+        // Date, Item Name, Supplier, Qty, Unit, Unit Price, ...
+        return ExpenseSalesLog(
+          date: date,
+          category: medicalSheet,
+          description: textAt(1),
+          amount: parseNumber(valueAt(5)),
+          unit: textAt(4),
+          quantity: parseNumber(valueAt(3)),
+        );
+
+      case feedSheet:
+        // Date, Feed Type, Supplier, Bags, Bag Weight (kg), Price/Bag, ...
+        return ExpenseSalesLog(
+          date: date,
+          category: feedSheet,
+          description: textAt(1),
+          amount: parseNumber(valueAt(5)),
+          unit: 'bags',
+          quantity: parseNumber(valueAt(3)),
+        );
+
+      case gritSheet:
+        // Date, Grit Type, Supplier, Quantity (kg), Rate/kg, Total
+        return ExpenseSalesLog(
+          date: date,
+          category: gritSheet,
+          description: textAt(1),
+          amount: parseNumber(valueAt(4)),
+          unit: 'kg',
+          quantity: parseNumber(valueAt(3)),
+        );
+
+      case otherExpensesSheet:
+        // Date, Expense Type, Description, Qty, Rate, Total
+        return ExpenseSalesLog(
+          date: date,
+          category: otherExpensesSheet,
+          description: textAt(2).isNotEmpty ? textAt(2) : textAt(1),
+          amount: parseNumber(valueAt(4)),
+          unit: 'units',
+          quantity: parseNumber(valueAt(3)),
+        );
+
+      case eggSalesSheet:
+        // Date, Customer, Trays, Eggs/Tray, Total Eggs, Total Weight,
+        // Rate/kg, Gross Sales, Charge %, Net Sales
+        return ExpenseSalesLog(
+          date: date,
+          category: eggSalesSheet,
+          description: textAt(1),
+          amount: parseNumber(valueAt(7)),
+          unit: 'trays',
+          quantity: parseNumber(valueAt(2)),
+        );
+
+      default:
+        return null;
+    }
+  }
+
   int? _rowNumberFromRange(String? range) {
     if (range == null || range.isEmpty) return null;
     final match = RegExp(r'![A-Z]+(\d+)(?::[A-Z]+(\d+))?$', caseSensitive: false).firstMatch(range);

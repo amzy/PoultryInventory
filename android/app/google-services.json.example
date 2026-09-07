@@ -1,0 +1,3 @@
+{
+  "note": "Do not use this file directly. If you choose Firebase/Google Services Gradle configuration, download the real google-services.json for com.amzy.poultryinventory from your Google/Firebase project and place it at android/app/google-services.json."
+}
