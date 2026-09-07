@@ -12,7 +12,7 @@ import '../models/poultry_log.dart';
 /// Every read/write goes through the authenticated Google account and the
 /// configured spreadsheet. No service-account/private key is bundled.
 class GoogleDriveService {
-  static const String spreadsheetId = '15ubhr2iPCXIwc4umiiqNESpOai12qPPN';
+  static const String spreadsheetId = '1Fm_coXKglKKllmiHhSA3fF1Jr9P6E7oufVKg4gcA70Y';
 
   static const String dailyLogSheet = 'Daily_Log';
   static const String medicalSheet = 'Medical';
