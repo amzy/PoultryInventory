@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AppNavItem {
   final String label;
@@ -96,7 +97,12 @@ class _DesktopSidebar extends StatelessWidget {
             Image.asset('assets/app_icons/playstore.png', width: 70, height: 70),
             const SizedBox(height: 8),
             const Text('Poultry Inventory', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: _UserProfileTile(),
+            ),
+            const SizedBox(height: 14),
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -110,13 +116,7 @@ class _DesktopSidebar extends StatelessWidget {
               ),
             ),
             const Divider(color: Colors.white24, indent: 16, endIndent: 16),
-            ListTile(
-              dense: true,
-              leading: const CircleAvatar(radius: 15, backgroundColor: Colors.white24, child: Icon(Icons.person, color: Colors.white, size: 17)),
-              title: const Text('Account', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
-              subtitle: const Text('Firebase secured', style: TextStyle(color: Colors.white60, fontSize: 10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
+            const _UserProfileTile(),
             const SizedBox(height: 8),
           ],
         ),
@@ -155,6 +155,60 @@ class _MobileDrawer extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UserProfileTile extends StatelessWidget {
+  const _UserProfileTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final displayName = user?.displayName?.trim();
+    final email = user?.email?.trim();
+    final name = (displayName == null || displayName.isEmpty) ? 'Google User' : displayName;
+    final photoUrl = user?.photoURL;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.white24,
+            backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl),
+            child: photoUrl == null
+                ? const Icon(Icons.person, color: Colors.white, size: 19)
+                : null,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  email ?? 'Firebase secured',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white60, fontSize: 9.5),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

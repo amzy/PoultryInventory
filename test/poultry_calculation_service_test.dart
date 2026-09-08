@@ -28,6 +28,53 @@ PoultryLog log({
     automatedFCR: trays > 0 ? feed / trays : 0,
     layingPercentage: endingBirds > 0 ? ((trays * 30).round() / endingBirds) * 100 : 0,
   );
+  test('uses default 5200 starting birds for the first Daily Log', () {
+    final input = PoultryLog(
+      date: DateTime(2026, 4, 27),
+      flockAge: 1,
+      startingBirds: 0,
+      mortality: 2,
+      endingBirds: 0,
+      trays: 10,
+      totalEggs: 0,
+      avgTrayWeight: 1000,
+      feedConsumed: 100,
+      stoneGritConsumed: 2,
+      waterIntake: 100,
+      automatedFCR: 0,
+      layingPercentage: 0,
+    );
+    final result = PoultryCalculationService.calculate(input: input);
+    expect(result.startingBirds, 5200);
+    expect(result.endingBirds, 5198);
+    expect(result.previousDateKey, 'datetime_bootstrap');
+    expect(result.previousEndingBirds, 0);
+  });
+
+
+  test('uses default 5200 starting birds for the first Daily Log', () {
+    final input = PoultryLog(
+      date: DateTime(2026, 4, 27),
+      flockAge: 1,
+      startingBirds: 0,
+      mortality: 2,
+      endingBirds: 0,
+      trays: 10,
+      totalEggs: 0,
+      avgTrayWeight: 1000,
+      feedConsumed: 100,
+      stoneGritConsumed: 2,
+      waterIntake: 100,
+      automatedFCR: 0,
+      layingPercentage: 0,
+    );
+    final result = PoultryCalculationService.calculate(input: input);
+    expect(result.startingBirds, 5200);
+    expect(result.endingBirds, 5198);
+    expect(result.previousDateKey, 'datetime_bootstrap');
+    expect(result.previousEndingBirds, 0);
+  });
+
 }
 
 void main() {

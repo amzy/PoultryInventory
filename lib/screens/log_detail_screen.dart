@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/poultry_log.dart';
+import 'log_form_screen.dart';
 
 class LogDetailScreen extends StatelessWidget {
   final PoultryLog log;
@@ -15,6 +16,15 @@ class LogDetailScreen extends StatelessWidget {
         title: const Text('Daily Log Details'),
         backgroundColor: const Color(0xFF10243D),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Edit Daily Log',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => LogFormScreen(existingLog: log)));
+            },
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),

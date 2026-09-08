@@ -7,7 +7,9 @@ import '../widgets/app_shell.dart';
 
 class ExpenseSalesFormScreen extends StatefulWidget {
   final String? initialCategory;
-  const ExpenseSalesFormScreen({super.key, this.initialCategory});
+  final bool embedded;
+  final VoidCallback? onEmbeddedBack;
+  const ExpenseSalesFormScreen({super.key, this.initialCategory, this.embedded = false, this.onEmbeddedBack});
   @override
   _ExpenseSalesFormScreenState createState() => _ExpenseSalesFormScreenState();
 }
@@ -22,7 +24,7 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
   final _unitController = TextEditingController();
   final _quantityController = TextEditingController();
 
-  final List<String> categories = ['Medical', 'Feed', 'Grit', 'Other_Expenses', 'Egg_Sales'];
+  final List<String> categories = ['Medical', 'Feed', 'Grit', 'Electricity', 'Tray', 'Other_Expenses', 'Egg_Sales'];
 
   @override
   void initState() {
@@ -34,13 +36,7 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PoultryAppShell(
-      selectedIndex: _navIndex,
-      title: 'Add ${_selectedCategory == 'Egg_Sales' ? 'Egg Sales' : 'Expense'}',
-      subtitle: 'Record farm financial activity',
-      onBack: () => Navigator.pop(context),
-      onNavigate: (index) { if (index != _navIndex) Navigator.pop(context); },
-      child: Form(
+    final content = Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
@@ -52,17 +48,40 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
               const SizedBox(height: 14),
               InkWell(onTap: _pickDate, borderRadius: BorderRadius.circular(11), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8FBF9), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFDCE7E0))), child: Row(children: [const Icon(Icons.calendar_month_outlined, color: Color(0xFF0E9F6E)), const SizedBox(width: 10), Expanded(child: Text(DateFormat('dd MMM yyyy').format(_selectedDate), style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right, color: Color(0xFF71827A))]))),
               const SizedBox(height: 10),
-              DropdownButtonFormField<String>(value: _selectedCategory, decoration: _decoration('Category', Icons.category_outlined), items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c.replaceAll('_',' ')))).toList(), onChanged: (v) => setState(() => _selectedCategory = v ?? 'Feed')),
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                decoration: _decoration('Category', Icons.category_outlined),
+                items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c.replaceAll('_',' ')))).toList(),
+                onChanged: (v) {
+                  setState(() {
+                    _selectedCategory = v ?? 'Feed';
+                    _descriptionController.clear();
+                    _unitController.clear();
+                    _quantityController.clear();
+                  });
+                },
+              ),
               const SizedBox(height: 10),
-              _buildTextField(_descriptionController, 'Description', TextInputType.text),
-              const SizedBox(height: 10),
-              LayoutBuilder(builder: (context, c) { final wide=c.maxWidth>=700; final fields=[_buildTextField(_amountController,'Amount',TextInputType.numberWithOptions(decimal:true)),_buildTextField(_unitController,'Unit (kg, L, etc)',TextInputType.text),_buildTextField(_quantityController,'Quantity',TextInputType.numberWithOptions(decimal:true))]; return wide ? Row(children: fields.map((f)=>Expanded(child:Padding(padding:const EdgeInsets.only(right:8),child:f))).toList()) : Column(children: fields); }),
+              if (_selectedCategory != 'Electricity') ...[
+                _buildTextField(_descriptionController, 'Description', TextInputType.text, required: _selectedCategory != 'Tray'),
+                const SizedBox(height: 10),
+              ],
+              _buildCategoryFields(),
             ])),
             const SizedBox(height: 14),
             SizedBox(height: 50, child: FilledButton.icon(onPressed: _submitForm, icon: const Icon(Icons.save_outlined), label: const Text('Save Record'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0E9F6E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: const TextStyle(fontWeight: FontWeight.w800)))),
           ],
         ),
-      ),
+      );
+
+    if (widget.embedded) return content;
+    return PoultryAppShell(
+      selectedIndex: _navIndex,
+      title: 'Add ${_selectedCategory == 'Egg_Sales' ? 'Egg Sales' : 'Expense'}',
+      subtitle: 'Record farm financial activity',
+      onBack: () => Navigator.pop(context),
+      onNavigate: (index) { if (index != _navIndex) Navigator.pop(context); },
+      child: content,
     );
   }
 
@@ -71,6 +90,8 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
       case 'Medical': return 2;
       case 'Feed': return 3;
       case 'Grit': return 4;
+      case 'Electricity': return 5;
+      case 'Tray': return 5;
       case 'Other_Expenses': return 5;
       case 'Egg_Sales': return 6;
       default: return 3;
@@ -84,7 +105,78 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
 
   InputDecoration _decoration(String label, IconData icon) => InputDecoration(labelText: label, labelStyle: const TextStyle(color: Color(0xFF708178), fontSize: 12), prefixIcon: Icon(icon, color: const Color(0xFF0E9F6E), size: 19), filled: true, fillColor: const Color(0xFFF9FBFA), border: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: Color(0xFFDCE7E0))), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: Color(0xFFDCE7E0))), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: Color(0xFF0E9F6E), width: 1.4)));
 
-  Widget _buildTextField(TextEditingController controller, String label, TextInputType type) {
+  Widget _buildCategoryFields() {
+    if (_selectedCategory == 'Electricity') {
+      return _buildTextField(
+        _amountController,
+        'Amount Paid (₹)',
+        TextInputType.numberWithOptions(decimal: true),
+      );
+    }
+
+    if (_selectedCategory == 'Tray') {
+      return LayoutBuilder(
+        builder: (context, c) {
+          final fields = [
+            _buildTextField(
+              _quantityController,
+              'No. of Bundles',
+              TextInputType.numberWithOptions(decimal: true),
+            ),
+            _buildTextField(
+              _amountController,
+              'Amount Paid (₹)',
+              TextInputType.numberWithOptions(decimal: true),
+            ),
+          ];
+          return c.maxWidth >= 700
+              ? Row(
+                  children: fields
+                      .map((f) => Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: f,
+                            ),
+                          ))
+                      .toList(),
+                )
+              : Column(children: fields);
+        },
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final fields = [
+          _buildTextField(
+            _amountController,
+            'Amount (₹)',
+            TextInputType.numberWithOptions(decimal: true),
+          ),
+          _buildTextField(_unitController, 'Unit (kg, L, etc)', TextInputType.text),
+          _buildTextField(
+            _quantityController,
+            'Quantity',
+            TextInputType.numberWithOptions(decimal: true),
+          ),
+        ];
+        return c.maxWidth >= 700
+            ? Row(
+                children: fields
+                    .map((f) => Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: f,
+                          ),
+                        ))
+                    .toList(),
+              )
+            : Column(children: fields);
+      },
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String label, TextInputType type, {bool required = true}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: TextFormField(
@@ -92,7 +184,15 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
         style: const TextStyle(color: Color(0xFF172A21), fontWeight: FontWeight.w600),
         decoration: _decoration(label, Icons.edit_outlined),
         keyboardType: type,
-        validator: (value) => value == null || value.isEmpty ? 'Required' : null,
+        validator: (value) {
+          if (required && (value == null || value.trim().isEmpty)) return 'Required';
+          if (!required && (value == null || value.trim().isEmpty)) return null;
+          if (type == TextInputType.numberWithOptions(decimal: true)) {
+            final n = double.tryParse(value!.trim());
+            if (n == null || n < 0) return 'Enter a valid value';
+          }
+          return null;
+        },
       ),
     );
   }
@@ -100,13 +200,29 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
   void _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final amount = double.tryParse(_amountController.text.trim()) ?? -1;
+    final quantity = _selectedCategory == 'Electricity'
+        ? 0.0
+        : (double.tryParse(_quantityController.text.trim()) ?? -1);
+
+    if (amount < 0 || quantity < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter valid non-negative values.')),
+      );
+      return;
+    }
+
     final log = ExpenseSalesLog(
       date: _selectedDate,
       category: _selectedCategory,
-      description: _descriptionController.text,
-      amount: double.parse(_amountController.text),
-      unit: _unitController.text,
-      quantity: double.parse(_quantityController.text),
+      description: _selectedCategory == 'Electricity'
+          ? 'Electricity bill'
+          : _descriptionController.text.trim(),
+      amount: amount,
+      unit: _selectedCategory == 'Electricity'
+          ? 'rupees'
+          : (_selectedCategory == 'Tray' ? 'bundle' : _unitController.text.trim()),
+      quantity: quantity,
     );
 
     try {

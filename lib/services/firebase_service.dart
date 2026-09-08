@@ -106,14 +106,9 @@ class FirebaseService {
     }
 
     final previous = await _findPreviousLog(normalized);
-    if (previous == null) {
-      throw StateError(
-        'No previous Daily Log exists before $key. Starting Birds cannot be calculated.',
-      );
-    }
 
     final targetRef = _daily.doc(key);
-    final previousRef = _daily.doc(_dateKey(previous.date));
+    final previousRef = previous == null ? null : _daily.doc(_dateKey(previous.date));
 
     final committed = await _db.runTransaction<PoultryLog>((tx) async {
       final existing = await tx.get(targetRef);
@@ -124,13 +119,16 @@ class FirebaseService {
       // Re-read the selected previous document inside the transaction so a
       // concurrent change to that document causes Firestore to retry the
       // transaction instead of silently accepting stale bird counts.
-      final previousSnapshot = await tx.get(previousRef);
-      if (!previousSnapshot.exists) {
-        throw StateError('The previous Daily Log no longer exists. Please retry.');
-      }
-      final currentPrevious = PoultryLog.fromFirestore(previousSnapshot.data()!);
-      if (currentPrevious.endingBirds != previous.endingBirds) {
-        throw StateError('Daily Logs changed while saving. Please retry.');
+      PoultryLog? currentPrevious;
+      if (previousRef != null) {
+        final previousSnapshot = await tx.get(previousRef);
+        if (!previousSnapshot.exists) {
+          throw StateError('The previous Daily Log no longer exists. Please retry.');
+        }
+        currentPrevious = PoultryLog.fromFirestore(previousSnapshot.data()!);
+        if (currentPrevious.endingBirds != previous!.endingBirds) {
+          throw StateError('Daily Logs changed while saving. Please retry.');
+        }
       }
 
       final finalCalculated = PoultryCalculationService.calculate(
@@ -155,6 +153,52 @@ class FirebaseService {
       chainPrevious = updated;
     }
     await _writeFutureRepairs(repairedFuture);
+  }
+
+  /// Updates an existing Daily Log. The date remains immutable and all later
+  /// logs are recalculated so the bird-count chain stays consistent.
+  Future<void> updateDailyLog(PoultryLog input) async {
+    final normalized = PoultryCalculationService.normalizeDate(input.date);
+    final key = _dateKey(normalized);
+    if (normalized.isAfter(PoultryCalculationService.normalizeDate(DateTime.now()))) {
+      throw StateError('Daily Log date cannot be in the future.');
+    }
+
+    final targetRef = _daily.doc(key);
+    final previous = await _findPreviousLog(normalized);
+    final previousRef = previous == null ? null : _daily.doc(_dateKey(previous.date));
+
+    final committed = await _db.runTransaction<PoultryLog>((tx) async {
+      final existing = await tx.get(targetRef);
+      if (!existing.exists) throw StateError('Daily Log not found for $key.');
+
+      PoultryLog? currentPrevious;
+      if (previousRef != null) {
+        final snap = await tx.get(previousRef);
+        if (!snap.exists) throw StateError('Previous Daily Log no longer exists. Please retry.');
+        currentPrevious = PoultryLog.fromFirestore(snap.data()!);
+      }
+
+      final calculated = PoultryCalculationService.calculate(
+        input: input.copyWith(date: normalized),
+        previous: currentPrevious,
+      );
+      tx.set(targetRef, calculated.toFirestore());
+      return calculated;
+    });
+
+    final future = await _findFutureLogs(key);
+    final repaired = <PoultryLog>[];
+    var chainPrevious = committed;
+    for (final old in future) {
+      final updated = PoultryCalculationService.recalculateFromPrevious(
+        input: old,
+        previous: chainPrevious,
+      );
+      repaired.add(updated);
+      chainPrevious = updated;
+    }
+    await _writeFutureRepairs(repaired);
   }
 
   /// Firestore Rules use one getAfter() call to verify each chain link. Keep

@@ -15,31 +15,74 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  Future<void> _navigate(int index) async {
-    if (index == 0) return;
-    Widget? page;
-    if (index == 1) page = const LogFormScreen();
-    if (index >= 2 && index <= 6) page = ExpenseSalesFormScreen(initialCategory: poultryNavItems[index].label.replaceAll(' ', '_'));
+  int _selectedIndex = 0;
+
+  void _navigate(int index) {
     if (index == 7) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings screen will be available here.')));
       return;
     }
-    if (page != null) {
-      final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => page!));
-      if (result == true && mounted) context.read<PoultryProvider>().fetchLogs();
+    if (_selectedIndex == index) return;
+    setState(() => _selectedIndex = index);
+  }
+
+  Widget _currentContent(PoultryProvider provider) {
+    switch (_selectedIndex) {
+      case 1:
+        return LogFormScreen(
+          embedded: true,
+          onEmbeddedBack: () => _navigate(0),
+          key: const ValueKey('daily-log'),
+        );
+      case 2:
+      case 3:
+      case 4:
+      case 5:
+      case 6:
+        return ExpenseSalesFormScreen(
+          initialCategory: poultryNavItems[_selectedIndex].label.replaceAll(' ', '_'),
+          embedded: true,
+          onEmbeddedBack: () => _navigate(0),
+          key: ValueKey('expense-$_selectedIndex'),
+        );
+      default:
+        return _dashboardBody(provider);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<PoultryProvider>(builder: (context, provider, _) {
+      final isExpense = _selectedIndex >= 2 && _selectedIndex <= 6;
+      final category = isExpense ? poultryNavItems[_selectedIndex].label : '';
       return PoultryAppShell(
-        selectedIndex: 0,
-        title: 'Dashboard',
-        subtitle: 'Overview of your poultry farm',
-        trailing: _syncButton(provider),
+        selectedIndex: _selectedIndex,
+        title: _selectedIndex == 0
+            ? 'Dashboard'
+            : _selectedIndex == 1
+                ? 'Add Daily Log'
+                : 'Add ${category == 'Egg Sales' ? 'Egg Sales' : 'Expense'}',
+        subtitle: _selectedIndex == 0
+            ? 'Overview of your poultry farm'
+            : _selectedIndex == 1
+                ? 'Track daily flock data'
+                : 'Record farm financial activity',
+        trailing: _selectedIndex == 0 ? _syncButton(provider) : null,
         onNavigate: _navigate,
-        child: _dashboardBody(provider),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          reverseDuration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(begin: const Offset(.025, 0), end: Offset.zero).animate(animation),
+              child: child,
+            ),
+          ),
+          child: _currentContent(provider),
+        ),
       );
     });
   }

@@ -7,7 +7,10 @@ import '../services/farm_config.dart';
 import '../widgets/app_shell.dart';
 
 class LogFormScreen extends StatefulWidget {
-  const LogFormScreen({super.key});
+  final PoultryLog? existingLog;
+  final bool embedded;
+  final VoidCallback? onEmbeddedBack;
+  const LogFormScreen({super.key, this.existingLog, this.embedded = false, this.onEmbeddedBack});
   @override State<LogFormScreen> createState() => _LogFormScreenState();
 }
 
@@ -24,20 +27,35 @@ class _LogFormScreenState extends State<LogFormScreen> {
   final _waterIntakeController = TextEditingController();
 
   @override
-  void initState() { super.initState(); for(final c in [_mortalityController,_traysController,_feedConsumedController]) c.addListener(_refreshPreview); _updateStartingBirdsForDate(_selectedDate); }
+  void initState() {
+    super.initState();
+    final existing = widget.existingLog;
+    if (existing != null) {
+      _selectedDate = DateTime(existing.date.year, existing.date.month, existing.date.day);
+      _mortalityController.text = existing.mortality.toString();
+      _traysController.text = existing.trays.toString();
+      _avgTrayWeightController.text = existing.avgTrayWeight.toString();
+      _feedConsumedController.text = existing.feedConsumed.toString();
+      _stoneGritConsumedController.text = existing.stoneGritConsumed.toString();
+      _waterIntakeController.text = existing.waterIntake.toString();
+    }
+    for(final c in [_mortalityController,_traysController,_feedConsumedController]) c.addListener(_refreshPreview);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = Provider.of<PoultryProvider>(context, listen: false);
+      if (widget.existingLog == null && provider.logs.isEmpty) {
+        _selectedDate = _minimumLogDate;
+      }
+      _updateStartingBirdsForDate(_selectedDate);
+    });
+  }
   @override void dispose() { for(final c in [_mortalityController,_traysController,_feedConsumedController]) c.removeListener(_refreshPreview); for(final c in [_startingBirdsController,_mortalityController,_traysController,_avgTrayWeightController,_feedConsumedController,_stoneGritConsumedController,_waterIntakeController]) c.dispose(); super.dispose(); }
   void _refreshPreview() { if(mounted) setState(() {}); }
   int get _age => FarmConfig.flockAgeOn(_selectedDate);
 
   @override
   Widget build(BuildContext context) {
-    return PoultryAppShell(
-      selectedIndex: 1,
-      title: 'Add Daily Log',
-      subtitle: 'Track daily flock data',
-      onBack: () => Navigator.pop(context),
-      onNavigate: _navigate,
-      child: Form(key: _formKey, child: LayoutBuilder(builder: (context, c) {
+    final content = Form(key: _formKey, child: LayoutBuilder(builder: (context, c) {
         final wide = c.maxWidth >= 1000;
         return ListView(padding: EdgeInsets.fromLTRB(wide ? 24 : 14, 8, wide ? 24 : 14, 28), children: [
           _dateHeader(wide),
@@ -46,17 +64,30 @@ class _LogFormScreenState extends State<LogFormScreen> {
           const SizedBox(height: 14),
           _calculatedPreview(wide),
           const SizedBox(height: 14),
-          SizedBox(height: 50, child: FilledButton.icon(onPressed: _submitForm, icon: const Icon(Icons.save_outlined), label: const Text('Save Daily Log'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0E9F6E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: const TextStyle(fontWeight: FontWeight.w800)))),
+          SizedBox(height: 50, child: FilledButton.icon(onPressed: _submitForm, icon: const Icon(Icons.save_outlined), label: Text(widget.existingLog == null ? 'Save Daily Log' : 'Update Daily Log'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0E9F6E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: const TextStyle(fontWeight: FontWeight.w800)))),
           const SizedBox(height: 8),
           const Center(child: Text('One daily log per date • Backdated entries allowed', style: TextStyle(color: Color(0xFF7A8A82), fontSize: 10))),
         ]);
-      })),
+      }));
+
+    if (widget.embedded) return content;
+    return PoultryAppShell(
+      selectedIndex: 1,
+      title: widget.existingLog == null ? 'Add Daily Log' : 'Edit Daily Log',
+      subtitle: widget.existingLog == null ? 'Track daily flock data' : 'Update daily flock data',
+      onBack: widget.embedded ? widget.onEmbeddedBack : () => Navigator.pop(context),
+      onNavigate: _navigate,
+      child: content,
     );
   }
 
   void _navigate(int index) {
     if(index == 1) return;
-    Navigator.pop(context);
+    if (widget.embedded) {
+      widget.onEmbeddedBack?.call();
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   Widget _dateHeader(bool wide) => AppCard(child: wide ? Row(children: [Expanded(child: _datePickerTile()), const SizedBox(width: 14), _ageCard()]) : Column(children: [_datePickerTile(), const SizedBox(height: 10), _ageCard()]));
@@ -129,7 +160,8 @@ class _LogFormScreenState extends State<LogFormScreen> {
   Widget _wideSections() => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Column(children: [_flockProduction(), const SizedBox(height: 14), _consumption()])), const SizedBox(width: 14), Expanded(child: _startingBirdsCard())]);
   Widget _narrowSections() => Column(children: [_startingBirdsCard(), const SizedBox(height:14), _flockProduction(), const SizedBox(height:14), _consumption()]);
 
-  Widget _startingBirdsCard() => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_sectionHeader('Starting Birds','Auto-calculated from previous daily log',Icons.lock_outline,const Color(0xFF64748B)), const SizedBox(height:12), TextFormField(controller:_startingBirdsController,readOnly:true,style:const TextStyle(fontWeight:FontWeight.w800,color:Color(0xFF1E3329)),decoration:_decoration('Starting Birds',Icons.lock_outline,readOnly:true),validator:(v)=>v==null||v.isEmpty?'No previous daily log found for this date':null)]));
+  Widget _startingBirdsCard() => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_sectionHeader('Starting Birds',_startingBirdsController.text == '5200' && _isBootstrapDate ? 'Default opening flock count' : 'Auto-calculated from previous daily log',Icons.lock_outline,const Color(0xFF64748B)), const SizedBox(height:12), TextFormField(controller:_startingBirdsController,readOnly:true,style:const TextStyle(fontWeight:FontWeight.w800,color:Color(0xFF1E3329)),decoration:_decoration('Starting Birds',Icons.lock_outline,readOnly:true),validator:(v)=>v==null||v.isEmpty?'Starting Birds are unavailable':null)]));
+  bool get _isBootstrapDate => DateTime(_selectedDate.year,_selectedDate.month,_selectedDate.day) == _minimumLogDate;
   Widget _flockProduction() => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_sectionHeader('Flock & Production','Enter daily flock and egg production',Icons.pets_outlined,const Color(0xFF0E9F6E)), const SizedBox(height:12), _responsiveFields([_field(_mortalityController,'Mortality',Icons.warning_amber_outlined,integer:true),_field(_traysController,'Trays (30 eggs)',Icons.inventory_2_outlined),_field(_avgTrayWeightController,'Avg Tray Weight (g)',Icons.monitor_weight_outlined)])]));
   Widget _consumption() => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_sectionHeader('Consumption','Track daily resource usage',Icons.inventory_2_outlined,const Color(0xFFF59E0B)), const SizedBox(height:12), _responsiveFields([_field(_feedConsumedController,'Feed Consumed (kg)',Icons.grass_outlined),_field(_stoneGritConsumedController,'Grit Consumed (kg)',Icons.scatter_plot_outlined),_field(_waterIntakeController,'Water Intake (L)',Icons.water_drop_outlined)])]));
 
@@ -165,8 +197,37 @@ class _LogFormScreenState extends State<LogFormScreen> {
   );
 
   Future<void> _pickDate() async { final now=DateTime.now(); final date=await showDatePicker(context:context,initialDate:_selectedDate.isBefore(_minimumLogDate)?_minimumLogDate:_selectedDate,firstDate:_minimumLogDate,lastDate:now,helpText:'SELECT DAILY LOG DATE',builder:(context,child)=>Theme(data:Theme.of(context).copyWith(colorScheme:const ColorScheme.light(primary:Color(0xFF0E9F6E),surface:Colors.white)),child:child!)); if(date!=null)setState((){_selectedDate=date;_updateStartingBirdsForDate(date);}); }
-  void _updateStartingBirdsForDate(DateTime date){final provider=Provider.of<PoultryProvider>(context,listen:false);final selected=DateTime(date.year,date.month,date.day);PoultryLog? previous;for(final log in provider.logs){final d=DateTime(log.date.year,log.date.month,log.date.day);if(d.isBefore(selected)&&(previous==null||d.isAfter(DateTime(previous!.date.year,previous!.date.month,previous!.date.day))))previous=log;} _startingBirdsController.text=previous?.endingBirds.toString()??'';}
+  void _updateStartingBirdsForDate(DateTime date){final provider=Provider.of<PoultryProvider>(context,listen:false);final selected=DateTime(date.year,date.month,date.day);PoultryLog? previous;for(final log in provider.logs){if(widget.existingLog != null && log.date.year==widget.existingLog!.date.year && log.date.month==widget.existingLog!.date.month && log.date.day==widget.existingLog!.date.day) continue;final d=DateTime(log.date.year,log.date.month,log.date.day);if(d.isBefore(selected)&&(previous==null||d.isAfter(DateTime(previous!.date.year,previous!.date.month,previous!.date.day))))previous=log;} _startingBirdsController.text=previous?.endingBirds.toString()??(_isBootstrapDate?'5200':'');setState((){});}
 
-  Future<void> _submitForm() async {FocusScope.of(context).unfocus();final normalized=DateTime(_selectedDate.year,_selectedDate.month,_selectedDate.day);if(normalized.isBefore(_minimumLogDate)){_show('Daily Log date cannot be before 27 Apr 2026.');return;}if(!_formKey.currentState!.validate())return;final provider=context.read<PoultryProvider>();if(provider.logs.any((l){final d=DateTime(l.date.year,l.date.month,l.date.day);return d==normalized;})){_show('A Daily Log already exists for ${DateFormat('dd MMM yyyy').format(_selectedDate)}.');return;}final starting=int.tryParse(_startingBirdsController.text);final mortality=int.tryParse(_mortalityController.text);if(starting==null||mortality==null){_show('Starting Birds and Mortality must be valid whole numbers.');return;}if(mortality>starting){_show('Mortality cannot be greater than Starting Birds.');return;}final trays=double.parse(_traysController.text),feed=double.parse(_feedConsumedController.text);final ending=starting-mortality;final eggs=(trays*30).round();final log=PoultryLog(date:_selectedDate,flockAge:_age,startingBirds:starting,mortality:mortality,endingBirds:ending,trays:trays,totalEggs:eggs,avgTrayWeight:double.parse(_avgTrayWeightController.text),feedConsumed:feed,stoneGritConsumed:double.parse(_stoneGritConsumedController.text),waterIntake:double.parse(_waterIntakeController.text),automatedFCR:trays>0?feed/trays:0,layingPercentage:ending>0?eggs/ending*100:0);try{await provider.addLog(log);if(mounted)Navigator.pop(context,true);}catch(e){if(mounted)_show('Error saving log: $e');}}
+  Future<void> _submitForm() async {
+    FocusScope.of(context).unfocus();
+    final normalized = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    if (normalized.isBefore(_minimumLogDate)) { _show('Daily Log date cannot be before 27 Apr 2026.'); return; }
+    if (!_formKey.currentState!.validate()) return;
+    final provider = context.read<PoultryProvider>();
+    final editing = widget.existingLog != null;
+    final duplicate = provider.logs.any((l) {
+      if (editing && l.date.year == widget.existingLog!.date.year && l.date.month == widget.existingLog!.date.month && l.date.day == widget.existingLog!.date.day) return false;
+      final d = DateTime(l.date.year, l.date.month, l.date.day);
+      return d == normalized;
+    });
+    if (duplicate) { _show('A Daily Log already exists for ${DateFormat('dd MMM yyyy').format(_selectedDate)}.'); return; }
+    final starting = int.tryParse(_startingBirdsController.text);
+    final mortality = int.tryParse(_mortalityController.text);
+    if (starting == null || mortality == null) { _show('Starting Birds and Mortality must be valid whole numbers.'); return; }
+    if (mortality > starting) { _show('Mortality cannot be greater than Starting Birds.'); return; }
+    final trays = double.tryParse(_traysController.text) ?? 0;
+    final feed = double.tryParse(_feedConsumedController.text) ?? 0;
+    final avgWeight = double.tryParse(_avgTrayWeightController.text) ?? 0;
+    final grit = double.tryParse(_stoneGritConsumedController.text) ?? 0;
+    final water = double.tryParse(_waterIntakeController.text) ?? 0;
+    final ending = starting - mortality;
+    final eggs = (trays * 30).round();
+    final log = PoultryLog(date: normalized, flockAge: _age, startingBirds: starting, mortality: mortality, endingBirds: ending, trays: trays, totalEggs: eggs, avgTrayWeight: avgWeight, feedConsumed: feed, stoneGritConsumed: grit, waterIntake: water, automatedFCR: trays > 0 ? feed / trays : 0, layingPercentage: ending > 0 ? eggs / ending * 100 : 0);
+    try {
+      if (editing) { await provider.updateLog(log); } else { await provider.addLog(log); }
+      if (mounted) Navigator.pop(context, true);
+    } catch(e) { if (mounted) _show('Error ${editing ? 'updating' : 'saving'} log: $e'); }
+  }
   void _show(String message)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(message),behavior:SnackBarBehavior.floating));
 }

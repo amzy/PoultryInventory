@@ -68,13 +68,23 @@ service cloud.firestore {
     }
 
     function dailyChainValid(userId, data) {
-      return data.previousDateKey != ''
-      && data.previousDateKey < data.dateKey
-      && data.previousEndingBirds >= 0
-      && data.startingBirds == data.previousEndingBirds
-      && getAfter(
-        /databases/$(database)/documents/users/$(userId)/daily_logs/$(data.previousDateKey)
-      ).data.endingBirds == data.previousEndingBirds;
+      // The very first Daily Log bootstraps the flock from the configured
+      // opening count. After that every log must reference the immediately
+      // previous log in the bird-count chain.
+      return (
+        data.previousDateKey == 'datetime_bootstrap'
+        && data.dateKey == '2026-04-27'
+        && data.startingBirds == 5200
+        && data.previousEndingBirds == 0
+      ) || (
+        data.previousDateKey != ''
+        && data.previousDateKey < data.dateKey
+        && data.previousEndingBirds >= 0
+        && data.startingBirds == data.previousEndingBirds
+        && getAfter(
+          /databases/$(database)/documents/users/$(userId)/daily_logs/$(data.previousDateKey)
+        ).data.endingBirds == data.previousEndingBirds
+      );
     }
 
     function dailyLogValid(userId, data) {
@@ -100,13 +110,15 @@ service cloud.firestore {
 
     function expenseValues(data) {
       return data.category in [
-        'Medical', 'Feed', 'Grit', 'Other_Expenses', 'Egg_Sales'
+        'Medical', 'Feed', 'Grit', 'Electricity', 'Tray', 'Other_Expenses', 'Egg_Sales'
       ]
       && data.amount >= 0
       && data.quantity >= 0
       && data.category.size() <= 40
       && data.description.size() <= 500
-      && data.unit.size() <= 30;
+      && data.unit.size() <= 30
+      && (data.category != 'Electricity' || (data.unit == 'rupees' && data.quantity == 0))
+      && (data.category != 'Tray' || data.unit == 'bundle');
     }
 
     match /users/{userId} {

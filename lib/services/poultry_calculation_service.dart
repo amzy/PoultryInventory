@@ -11,10 +11,10 @@ class PoultryCalculationService {
 
   static PoultryLog calculate({
     required PoultryLog input,
-    required PoultryLog previous,
+    PoultryLog? previous,
   }) {
     _validateInputs(input);
-    final starting = previous.endingBirds;
+    final starting = previous?.endingBirds ?? FarmConfig.defaultStartingBirds;
     if (input.mortality > starting) {
       throw StateError('Mortality cannot exceed Starting Birds.');
     }
@@ -31,8 +31,8 @@ class PoultryCalculationService {
       totalEggs: eggs,
       automatedFCR: fcr,
       layingPercentage: laying,
-      previousDateKey: dateKey(previous.date),
-      previousEndingBirds: previous.endingBirds,
+      previousDateKey: previous == null ? 'datetime_bootstrap' : dateKey(previous.date),
+      previousEndingBirds: previous?.endingBirds ?? 0,
     );
   }
 

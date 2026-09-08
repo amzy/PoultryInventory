@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ExpenseSalesLog {
   final DateTime date;
-  final String category; // Medical, Feed, Grit, Other_Expenses, Egg_Sales
+  final String category; // Medical, Feed, Grit, Electricity, Tray, Other_Expenses, Egg_Sales
   final String description;
   final double amount;
   final String unit; // kg, L, eggs, units, etc
