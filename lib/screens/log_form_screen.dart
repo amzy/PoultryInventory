@@ -61,8 +61,70 @@ class _LogFormScreenState extends State<LogFormScreen> {
 
   Widget _dateHeader(bool wide) => AppCard(child: wide ? Row(children: [Expanded(child: _datePickerTile()), const SizedBox(width: 14), _ageCard()]) : Column(children: [_datePickerTile(), const SizedBox(height: 10), _ageCard()]));
 
-  Widget _datePickerTile() => InkWell(onTap: _pickDate, borderRadius: BorderRadius.circular(12), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8FBF9), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDDE8E1))), child: Row(children: [_iconBox(Icons.calendar_month_outlined,const Color(0xFF0E9F6E)), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Date', style: TextStyle(fontSize: 11, color: Color(0xFF65766D))), const SizedBox(height: 3), Text(DateFormat('dd MMM yyyy').format(_selectedDate), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF172A21))), const SizedBox(height: 2), Text('Earliest allowed: 27 Apr 2026', style: TextStyle(fontSize: 9, color: _selectedDate.isBefore(_minimumLogDate) ? Colors.red : const Color(0xFF789087)))])), const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF52675D))]));
-  Widget _ageCard() => Container(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13), decoration: BoxDecoration(color: const Color(0xFFE7F6EC), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 38,height:38,decoration:BoxDecoration(color:Colors.white.withOpacity(.7),borderRadius:BorderRadius.circular(10)),child:const Icon(Icons.pets_outlined,color:Color(0xFF0E9F6E))),const SizedBox(width:10),Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Flock Age',style:TextStyle(fontSize:10,color:Color(0xFF557263))),Text('$_age Days',style:const TextStyle(fontSize:18,fontWeight:FontWeight.w900,color:Color(0xFF0B5B3E)))])]);
+  Widget _datePickerTile() => InkWell(
+    onTap: _pickDate,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBF9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDDE8E1)),
+      ),
+      child: Row(
+        children: [
+          _iconBox(Icons.calendar_month_outlined, const Color(0xFF0E9F6E)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Date', style: TextStyle(fontSize: 11, color: Color(0xFF65766D))),
+                const SizedBox(height: 3),
+                Text(
+                  DateFormat('dd MMM yyyy').format(_selectedDate),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF172A21)),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Earliest allowed: 27 Apr 2026',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: _selectedDate.isBefore(_minimumLogDate) ? Colors.red : const Color(0xFF789087),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF52675D)),
+        ],
+      ),
+    ),
+  );
+
+  Widget _ageCard() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+    decoration: BoxDecoration(color: const Color(0xFFE7F6EC), borderRadius: BorderRadius.circular(12)),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(color: Colors.white.withOpacity(.7), borderRadius: BorderRadius.circular(10)),
+          child: const Icon(Icons.pets_outlined, color: Color(0xFF0E9F6E)),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Flock Age', style: TextStyle(fontSize: 10, color: Color(0xFF557263))),
+            Text('$_age Days', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0B5B3E))),
+          ],
+        ),
+      ],
+    ),
+  );
 
   Widget _wideSections() => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Column(children: [_flockProduction(), const SizedBox(height: 14), _consumption()])), const SizedBox(width: 14), Expanded(child: _startingBirdsCard())]);
   Widget _narrowSections() => Column(children: [_startingBirdsCard(), const SizedBox(height:14), _flockProduction(), const SizedBox(height:14), _consumption()]);
@@ -78,7 +140,29 @@ class _LogFormScreenState extends State<LogFormScreen> {
   Widget _iconBox(IconData icon,Color color)=>Container(width:38,height:38,decoration:BoxDecoration(color:color.withOpacity(.10),borderRadius:BorderRadius.circular(10)),child:Icon(icon,color:color,size:20));
 
   Widget _calculatedPreview(bool wide) { final starting=int.tryParse(_startingBirdsController.text)??0; final mortality=int.tryParse(_mortalityController.text)??0; final trays=double.tryParse(_traysController.text)??0; final feed=double.tryParse(_feedConsumedController.text)??0; final ending=(starting-mortality).clamp(0,1000000000); final eggs=(trays*30).round(); final fcr=trays>0?feed/trays:0; final laying=ending>0?eggs/ending*100:0; return Container(padding:const EdgeInsets.all(16),decoration:BoxDecoration(color:const Color(0xFFE5F6EC),borderRadius:BorderRadius.circular(16),border:Border.all(color:const Color(0xFFCBE8D6))),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[_sectionHeader('Calculated Preview','These values are calculated automatically',Icons.calculate_outlined,const Color(0xFF0E9F6E)),const SizedBox(height:12),LayoutBuilder(builder:(context,c){final n=c.maxWidth>=700?4:2;final w=(c.maxWidth-(n-1)*10)/n;return Wrap(spacing:10,runSpacing:10,children:[_preview('Ending Birds','$ending',Icons.pets_outlined),_preview('Total Eggs','$eggs',Icons.egg_alt_outlined),_preview('FCR',fcr.toStringAsFixed(2),Icons.speed_outlined),_preview('Laying %','${laying.toStringAsFixed(1)}%',Icons.bar_chart_outlined)].map((x)=>SizedBox(width:w,child:x)).toList());})])); }
-  Widget _preview(String label,String value,IconData icon)=>Container(padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(12),border:Border.all(color:const Color(0xFFDDEAE1))),child:Row(children:[Icon(icon,color:const Color(0xFF0E9F6E),size:19),const SizedBox(width:8),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(label,style:const TextStyle(fontSize:10,color:Color(0xFF6F8177))),Text(value,style:const TextStyle(fontSize:17,fontWeight:FontWeight.w900,color:Color(0xFF142A20)))])])));
+  Widget _preview(String label, String value, IconData icon) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFDDEAE1)),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: const Color(0xFF0E9F6E), size: 19),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF6F8177))),
+              Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF142A20))),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _pickDate() async { final now=DateTime.now(); final date=await showDatePicker(context:context,initialDate:_selectedDate.isBefore(_minimumLogDate)?_minimumLogDate:_selectedDate,firstDate:_minimumLogDate,lastDate:now,helpText:'SELECT DAILY LOG DATE',builder:(context,child)=>Theme(data:Theme.of(context).copyWith(colorScheme:const ColorScheme.light(primary:Color(0xFF0E9F6E),surface:Colors.white)),child:child!)); if(date!=null)setState((){_selectedDate=date;_updateStartingBirdsForDate(date);}); }
   void _updateStartingBirdsForDate(DateTime date){final provider=Provider.of<PoultryProvider>(context,listen:false);final selected=DateTime(date.year,date.month,date.day);PoultryLog? previous;for(final log in provider.logs){final d=DateTime(log.date.year,log.date.month,log.date.day);if(d.isBefore(selected)&&(previous==null||d.isAfter(DateTime(previous!.date.year,previous!.date.month,previous!.date.day))))previous=log;} _startingBirdsController.text=previous?.endingBirds.toString()??'';}

@@ -160,8 +160,8 @@ class _BarChartPainter extends CustomPainter {
   @override void paint(Canvas canvas, Size size) {
     final grid = Paint()..color = const Color(0xFFE6ECE8)..strokeWidth = 1;
     final bar = Paint()..color = const Color(0xFF35B86B);
-    for (var i=0;i<5;i++){final y=12+(size.height-35)*i/4;canvas.drawLine(0,y,size.width,y,grid);}
-    if(values.isEmpty)return; final max=values.reduce((a,b)=>a>b?a:b); final bw=size.width/(values.length*1.6); for(var i=0;i<values.length;i++){final h=max<=0?0:(values[i]/max)*(size.height-45); final x=i*size.width/values.length+(size.width/values.length-bw)/2; canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x,size.height-25-h,bw,h),const Radius.circular(4)),bar);}
+    for (var i=0;i<5;i++){final y=12+(size.height-35)*i/4;canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);}
+    if(values.isEmpty)return; final max=values.reduce((a,b)=>a>b?a:b); final bw=size.width/(values.length*1.6); for(var i=0;i<values.length;i++){final h=max<=0 ? 0.0 : (values[i]/max)*(size.height-45); final x=i*size.width/values.length+(size.width/values.length-bw)/2; canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x,size.height-25-h,bw,h),const Radius.circular(4)),bar);}
   }
   @override bool shouldRepaint(covariant _BarChartPainter old)=>old.values!=values;
 }
