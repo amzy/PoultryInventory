@@ -333,9 +333,49 @@ class GoogleDriveService {
   /// The response tells us which row was actually written; formulas are then
   /// placed into that exact row and the row is read back before this method
   /// reports success.
+  Future<bool> hasDailyLogForDate(DateTime date) async {
+    return _withRetry((api) async {
+      final response = await api.spreadsheets.values.get(
+        spreadsheetId,
+        '$dailyLogSheet!A5:A1000',
+        valueRenderOption: 'FORMATTED_VALUE',
+      );
+      final target = DateFormat('yyyy-MM-dd').format(date);
+      for (final row in response.values ?? <List<Object?>>[]) {
+        if (row.isEmpty) continue;
+        final value = row[0]?.toString().trim() ?? '';
+        if (value.isEmpty) continue;
+        try {
+          if (DateFormat('yyyy-MM-dd').format(DateTime.parse(value)) == target) {
+            return true;
+          }
+        } catch (_) {
+          if (value == target) return true;
+        }
+      }
+      return false;
+    });
+  }
+
   Future<void> appendDailyLog(PoultryLog log) async {
     final api = await _api(allowInteractive: true);
     final date = DateFormat('yyyy-MM-dd').format(log.date);
+
+    // Daily_Log has one record per calendar date. Check the sheet itself
+    // before appending so a duplicate cannot be created even if the local
+    // provider has stale data.
+    final duplicateResponse = await api.spreadsheets.values.get(
+      spreadsheetId,
+      '$dailyLogSheet!A5:A1000',
+      valueRenderOption: 'FORMATTED_VALUE',
+    );
+    for (final row in duplicateResponse.values ?? <List<Object?>>[]) {
+      if (row.isEmpty) continue;
+      final value = row[0]?.toString().trim() ?? '';
+      if (value == date) {
+        throw Exception('A Daily Log already exists for $date. Choose another date.');
+      }
+    }
 
     final response = await api.spreadsheets.values.append(
       sheets.ValueRange(values: <List<Object?>>[

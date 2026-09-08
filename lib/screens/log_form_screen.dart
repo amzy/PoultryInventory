@@ -46,7 +46,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add Daily Log')),
+      appBar: AppBar(title: const Text('Add Daily Log')),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -55,7 +55,8 @@ class _LogFormScreenState extends State<LogFormScreen> {
             children: [
               ListTile(
                 title: Text('Date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}'),
-                trailing: Icon(Icons.calendar_today),
+                subtitle: const Text('Back-date entries are allowed. One log per date.'),
+                trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
                   final date = await showDatePicker(
                     context: context,
@@ -78,7 +79,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
               _buildReadOnlyField(
                 _startingBirdsController,
                 'Starting Birds',
-                'Auto: previous day Starting Birds - Mortality',
+                'Auto: latest previous log ending birds for the selected date',
               ),
               _buildTextField(_mortalityController, 'Mortality', TextInputType.number),
               _buildTextField(_traysController, 'Trays (30 Eggs)', TextInputType.numberWithOptions(decimal: true)),
@@ -166,6 +167,27 @@ class _LogFormScreenState extends State<LogFormScreen> {
 
   void _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final provider = Provider.of<PoultryProvider>(context, listen: false);
+    final normalizedSelectedDate = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
+    final duplicate = provider.logs.any((existing) {
+      final d = DateTime(existing.date.year, existing.date.month, existing.date.day);
+      return d == normalizedSelectedDate;
+    });
+    if (duplicate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'A Daily Log already exists for ${DateFormat('dd MMM yyyy').format(_selectedDate)}.',
+          ),
+        ),
+      );
+      return;
+    }
 
     final startingBirds = int.parse(_startingBirdsController.text);
     final mortality = int.parse(_mortalityController.text);

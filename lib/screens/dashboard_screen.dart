@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/expense_sales_log.dart';
 import '../providers/poultry_provider.dart';
 import 'log_form_screen.dart';
+import 'log_detail_screen.dart';
 import 'expense_sales_form_screen.dart';
 import '../widgets/google_sign_in_button.dart';
 
@@ -358,7 +359,20 @@ class _DashboardScreenState extends State<DashboardScreen>
           leading: CircleAvatar(radius: 17, backgroundColor: const Color(0xFF06B6D4).withOpacity(.15), child: const Icon(Icons.calendar_today, size: 16, color: Color(0xFF67E8F9))),
           title: Text(DateFormat('dd MMM yyyy').format(log.date), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
           subtitle: Text('Age ${log.flockAge}d  •  Eggs ${log.totalEggs}  •  Feed ${log.feedConsumed.toStringAsFixed(1)} kg', style: const TextStyle(color: Colors.white60, fontSize: 11)),
-          trailing: Text('${log.layingPercentage.toStringAsFixed(1)}%', style: const TextStyle(color: Color(0xFF4ADE80), fontWeight: FontWeight.bold, fontSize: 13)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('${log.layingPercentage.toStringAsFixed(1)}%', style: const TextStyle(color: Color(0xFF4ADE80), fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(width: 5),
+              const Icon(Icons.chevron_right, color: Colors.white38, size: 20),
+            ],
+          ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => LogDetailScreen(log: log)),
+            );
+          },
         ),
       );
     }).toList());

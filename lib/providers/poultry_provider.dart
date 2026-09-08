@@ -101,6 +101,15 @@ class PoultryProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
+      final duplicate = _logs.any((existing) =>
+          existing.date.year == log.date.year &&
+          existing.date.month == log.date.month &&
+          existing.date.day == log.date.day);
+      if (duplicate) {
+        throw Exception(
+          'A Daily Log already exists for ${log.date.year.toString().padLeft(4, '0')}-${log.date.month.toString().padLeft(2, '0')}-${log.date.day.toString().padLeft(2, '0')}. Choose another date.',
+        );
+      }
       await _driveService.appendDailyLog(log);
       await fetchLogs();
     } catch (e) {
