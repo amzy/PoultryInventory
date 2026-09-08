@@ -1,4 +1,4 @@
-import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -167,12 +167,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ]));
 
   Widget _expenseChart(PoultryProvider p) {
-    final total = p.totalExpenses + p.totalEggSales;
-    final values = total <= 0 ? [45.0, 20.0, 15.0, 10.0, 10.0] : [p.totalExpenses * .45, p.totalExpenses * .20, p.totalExpenses * .15, p.totalExpenses * .10, p.totalEggSales];
+    final grouped = <String, List<ExpenseSalesLog>>{};
+    for (final record in p.expenseRecords) {
+      final isSale = record.category == 'Egg_Sales';
+      final key = isSale
+          ? 'Egg Sales'
+          : (record.mainCategory.trim().isEmpty ? 'Uncategorized' : record.mainCategory.trim());
+      grouped.putIfAbsent(key, () => []).add(record);
+    }
+    final entries = grouped.entries.toList()
+      ..sort((a, b) => b.value.fold<double>(0, (sum, e) => sum + e.amount).compareTo(b.value.fold<double>(0, (sum, e) => sum + e.amount)));
+    final values = entries.map((e) => e.value.fold<double>(0, (sum, r) => sum + r.amount)).toList();
+
     return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Expenses & Sales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
-      const SizedBox(height: 8), SizedBox(height: 190, child: Row(children: [Expanded(child: CustomPaint(painter: _PieChartPainter(values), child: const SizedBox.expand())), const SizedBox(width: 12), Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: const [Text('Feed', style: TextStyle(fontSize: 11)), Text('Medical', style: TextStyle(fontSize: 11)), Text('Grit', style: TextStyle(fontSize: 11)), Text('Other', style: TextStyle(fontSize: 11)), Text('Egg Sales', style: TextStyle(fontSize: 11))]))]))
+      const SizedBox(height: 4),
+      const Text('Tap a category to view its transactions', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
+      const SizedBox(height: 8),
+      SizedBox(height: 210, child: values.isEmpty
+          ? const Center(child: Text('No expense or sales transactions yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A))))
+          : Row(children: [
+              Expanded(child: LayoutBuilder(builder: (context, chartConstraints) {
+                final chartSize = Size(chartConstraints.maxWidth, chartConstraints.maxHeight);
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) {
+                    final index = _pieIndexForTap(details.localPosition, chartSize, values);
+                    if (index != null && index < entries.length) _showCategoryTransactions(entries[index].key, entries[index].value);
+                  },
+                  child: CustomPaint(painter: _PieChartPainter(values, selectedIndex: -1), child: const SizedBox.expand()),
+                );
+              })),
+              const SizedBox(width: 8),
+              Expanded(child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: entries.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 7),
+                itemBuilder: (context, index) {
+                  final amount = values[index];
+                  final sale = entries[index].key == 'Egg Sales';
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _showCategoryTransactions(entries[index].key, entries[index].value),
+                    child: Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
+                      Container(width: 9, height: 9, decoration: BoxDecoration(color: _pieColors[index % _pieColors.length], shape: BoxShape.circle)),
+                      const SizedBox(width: 7),
+                      Expanded(child: Text(entries[index].key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
+                      Text('${sale ? '+' : ''}${_money(amount)}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: sale ? const Color(0xFF087A4F) : const Color(0xFFB45309))),
+                    ])),
+                  );
+                },
+              )),
+            ])),
     ]));
+  }
+
+  int? _pieIndexForTap(Offset position, Size size, List<double> values) {
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return null;
+    final center = Offset(size.width / 2, size.height / 2);
+    final dx = position.dx - center.dx;
+    final dy = position.dy - center.dy;
+    final radius = math.sqrt(dx * dx + dy * dy);
+    final chartRadius = size.shortestSide * .34;
+    if (radius > chartRadius) return null;
+    var angle = math.atan2(dy, dx) + math.pi / 2;
+    if (angle < 0) angle += math.pi * 2;
+    var cursor = 0.0;
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * math.pi * 2;
+      if (angle >= cursor && angle <= cursor + sweep) return i;
+      cursor += sweep;
+    }
+    return null;
+  }
+
+  void _showCategoryTransactions(String category, List<ExpenseSalesLog> records) {
+    final sorted = [...records]..sort((a, b) => b.date.compareTo(a.date));
+    final total = sorted.fold<double>(0, (sum, r) => sum + r.amount);
+    final isSale = category == 'Egg Sales';
+    showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+      title: Row(children: [Expanded(child: Text(category)), IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close))]),
+      content: SizedBox(width: 520, height: 420, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${isSale ? 'Earnings' : 'Expenses'} • ${_money(total)}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))),
+        const SizedBox(height: 12),
+        Expanded(child: sorted.isEmpty ? const Align(alignment: Alignment.topLeft, child: Text('No transactions.')) : ListView.separated(itemCount: sorted.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, index) {
+          final r = sorted[index];
+          final detail = [r.description.trim(), r.category == category ? '' : r.category, r.unit.trim().isEmpty ? '' : '${r.quantity % 1 == 0 ? r.quantity.toInt() : r.quantity} ${r.unit}'].where((x) => x.isNotEmpty).join(' • ');
+          return ListTile(contentPadding: EdgeInsets.zero, leading: CircleAvatar(radius: 16, backgroundColor: isSale ? const Color(0xFFE4F7EC) : const Color(0xFFFFF3E2), child: Icon(isSale ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 16, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))), title: Text(_money(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)), subtitle: Text('${DateFormat('dd MMM yyyy').format(r.date)}${detail.isEmpty ? '' : ' • $detail'}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))));
+        })),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+    ));
   }
 
   Widget _expenseGroups(PoultryProvider p) {
@@ -237,7 +323,28 @@ class _BarChartPainter extends CustomPainter {
 }
 
 class _PieChartPainter extends CustomPainter {
-  final List<double> values; _PieChartPainter(this.values);
-  @override void paint(Canvas canvas, Size size) { final total=values.fold<double>(0,(a,b)=>a+b); if(total<=0)return; final colors=[const Color(0xFF2F80ED),const Color(0xFFF59E0B),const Color(0xFF34B66A),const Color(0xFFF97316),const Color(0xFF9CA3AF)]; final r=(size.shortestSide*.34); final center=Offset(size.width/2,size.height/2); var start=-1.57; for(var i=0;i<values.length;i++){final sweep=values[i]/total*6.283; final p=Paint()..color=colors[i%colors.length];canvas.drawArc(Rect.fromCircle(center:center,radius:r),start,sweep,true,p);start+=sweep;} }
-  @override bool shouldRepaint(covariant _PieChartPainter old)=>old.values!=values;
+  final List<double> values;
+  final int selectedIndex;
+  _PieChartPainter(this.values, {this.selectedIndex = -1});
+  @override void paint(Canvas canvas, Size size) {
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return;
+    final r = size.shortestSide * .34;
+    final center = Offset(size.width / 2, size.height / 2);
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * math.pi * 2;
+      final p = Paint()..color = _pieColors[i % _pieColors.length];
+      canvas.drawArc(Rect.fromCircle(center: center, radius: r), start, sweep, true, p);
+      start += sweep;
+    }
+    final hole = Paint()..color = Colors.white;
+    canvas.drawCircle(center, r * .52, hole);
+  }
+  @override bool shouldRepaint(covariant _PieChartPainter old) => old.values != values || old.selectedIndex != selectedIndex;
 }
+
+const _pieColors = <Color>[
+  Color(0xFF2F80ED), Color(0xFFF59E0B), Color(0xFF34B66A), Color(0xFFF97316),
+  Color(0xFF8B5CF6), Color(0xFF06B6D4), Color(0xFFEF4444), Color(0xFF64748B),
+];

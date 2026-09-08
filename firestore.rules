@@ -73,9 +73,17 @@ service cloud.firestore {
       // previous log in the bird-count chain.
       return (
         data.previousDateKey == 'datetime_bootstrap'
-        && data.dateKey == '2026-04-27'
         && data.startingBirds == 5200
         && data.previousEndingBirds == 0
+        && getAfter(
+          /databases/$(database)/documents/users/$(userId)/settings/farm
+        ).data.initialized == true
+        && getAfter(
+          /databases/$(database)/documents/users/$(userId)/settings/farm
+        ).data.openingBirds == 5200
+        && getAfter(
+          /databases/$(database)/documents/users/$(userId)/settings/farm
+        ).data.firstLogDateKey == data.dateKey
       ) || (
         data.previousDateKey != ''
         && data.previousDateKey < data.dateKey
@@ -124,6 +132,18 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if false;
+
+      match /settings/{settingId} {
+        allow read: if signedIn(userId);
+        allow create: if signedIn(userId)
+          && settingId == 'farm'
+          && request.resource.data.keys().hasOnly(['initialized', 'openingBirds', 'firstLogDateKey'])
+          && request.resource.data.initialized == true
+          && request.resource.data.openingBirds == 5200
+          && request.resource.data.firstLogDateKey is string
+          && request.resource.data.firstLogDateKey >= '2026-04-27';
+        allow update, delete: if false;
+      }
 
       match /daily_logs/{logId} {
         allow read: if signedIn(userId);

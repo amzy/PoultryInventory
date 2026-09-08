@@ -33,6 +33,9 @@ class FirebaseService {
   CollectionReference<Map<String, dynamic>> get _expenses =>
       _db.collection('users').doc(_uid).collection('expense_records');
 
+  DocumentReference<Map<String, dynamic>> get _farmConfig =>
+      _db.collection('users').doc(_uid).collection('settings').doc('farm');
+
   Future<void> initializeGoogle() async {
     if (!kIsWeb) await _google.initialize();
   }
@@ -59,9 +62,9 @@ class FirebaseService {
 
   Future<List<PoultryLog>> fetchLogs() async {
     final snapshot = await _daily.orderBy('dateKey', descending: true).get();
-    return snapshot.docs
-        .map((d) => PoultryLog.fromFirestore(d.data()))
-        .toList();
+    final logs = snapshot.docs.map((d) => PoultryLog.fromFirestore(d.data())).toList();
+    await _ensureFarmBootstrapConfig(logs);
+    return logs;
   }
 
   Future<List<ExpenseSalesLog>> fetchExpenseRecords() async {
@@ -92,6 +95,18 @@ class FirebaseService {
     return snapshot.docs
         .map((d) => PoultryLog.fromFirestore(d.data()))
         .toList();
+  }
+
+  Future<void> _ensureFarmBootstrapConfig(List<PoultryLog> logs) async {
+    final config = await _farmConfig.get();
+    if (config.exists) return;
+    if (logs.isEmpty) return;
+    final earliest = logs.reduce((a, b) => a.date.isBefore(b.date) ? a : b);
+    await _farmConfig.set({
+      'initialized': true,
+      'openingBirds': 5200,
+      'firstLogDateKey': _dateKey(earliest.date),
+    });
   }
 
   /// Adds one Daily Log and repairs all later logs when the entry is backdated.
@@ -128,6 +143,20 @@ class FirebaseService {
         currentPrevious = PoultryLog.fromFirestore(previousSnapshot.data()!);
         if (currentPrevious.endingBirds != previous!.endingBirds) {
           throw StateError('Daily Logs changed while saving. Please retry.');
+        }
+      } else {
+        final configSnapshot = await tx.get(_farmConfig);
+        if (!configSnapshot.exists) {
+          tx.set(_farmConfig, {
+            'initialized': true,
+            'openingBirds': 5200,
+            'firstLogDateKey': key,
+          });
+        } else {
+          final config = configSnapshot.data()!;
+          if (config['firstLogDateKey']?.toString() != key) {
+            throw StateError('This date is before the first Daily Log. Please choose a date on or after the first log.');
+          }
         }
       }
 
@@ -177,6 +206,12 @@ class FirebaseService {
         final snap = await tx.get(previousRef);
         if (!snap.exists) throw StateError('Previous Daily Log no longer exists. Please retry.');
         currentPrevious = PoultryLog.fromFirestore(snap.data()!);
+      } else {
+        final configSnapshot = await tx.get(_farmConfig);
+        final config = configSnapshot.data();
+        if (config == null || config['firstLogDateKey']?.toString() != key) {
+          throw StateError('Farm opening configuration is missing. Refresh the app and try again.');
+        }
       }
 
       final calculated = PoultryCalculationService.calculate(
