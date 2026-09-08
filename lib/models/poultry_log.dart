@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/farm_config.dart';
 
 class PoultryLog {
   final DateTime date;
@@ -84,7 +85,10 @@ class PoultryLog {
     DateTime date = (data['date'] is Timestamp) ? (data['date'] as Timestamp).toDate() : DateTime.parse(data['dateKey'] as String);
     double d(dynamic v) => (v as num?)?.toDouble() ?? 0;
     int i(dynamic v) => (v as num?)?.toInt() ?? 0;
-    return PoultryLog(date: date, flockAge: i(data['flockAge']), startingBirds: i(data['startingBirds']), mortality: i(data['mortality']), endingBirds: i(data['endingBirds']), trays: d(data['trays']), totalEggs: i(data['totalEggs']), avgTrayWeight: d(data['avgTrayWeight']), feedConsumed: d(data['feedConsumed']), stoneGritConsumed: d(data['stoneGritConsumed']), waterIntake: d(data['waterIntake']), automatedFCR: d(data['automatedFCR']), layingPercentage: d(data['layingPercentage']), previousDateKey: data['previousDateKey']?.toString() ?? '', previousEndingBirds: i(data['previousEndingBirds']));
+    // Always derive age from the configured flock start date so records created
+    // before the age fix cannot continue displaying a stale/zero value.
+    final calculatedAge = FarmConfig.flockAgeOn(date);
+    return PoultryLog(date: date, flockAge: calculatedAge, startingBirds: i(data['startingBirds']), mortality: i(data['mortality']), endingBirds: i(data['endingBirds']), trays: d(data['trays']), totalEggs: i(data['totalEggs']), avgTrayWeight: d(data['avgTrayWeight']), feedConsumed: d(data['feedConsumed']), stoneGritConsumed: d(data['stoneGritConsumed']), waterIntake: d(data['waterIntake']), automatedFCR: d(data['automatedFCR']), layingPercentage: d(data['layingPercentage']), previousDateKey: data['previousDateKey']?.toString() ?? '', previousEndingBirds: i(data['previousEndingBirds']));
   }
 
   Map<String, dynamic> toFirestore() => {

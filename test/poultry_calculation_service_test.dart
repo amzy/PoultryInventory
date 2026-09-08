@@ -1,3 +1,4 @@
+import 'package:poultry_inventory/services/farm_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:poultry_inventory/models/poultry_log.dart';
 import 'package:poultry_inventory/services/poultry_calculation_service.dart';
@@ -86,4 +87,55 @@ void main() {
     expect(future.previousDateKey, '2026-09-06');
     expect(future.previousEndingBirds, 5193);
   });
-}
+
+
+    test('flock age is derived from the real flock start date', () {
+    expect(FarmConfig.flockAgeOn(DateTime(2026, 4, 26)), 0);
+    expect(FarmConfig.flockAgeOn(DateTime(2026, 9, 5)), 132);
+    expect(FarmConfig.flockAgeOn(DateTime(2026, 9, 8)), 135);
+  });
+
+
+  test('calculate overrides stale flock age with date-derived age', () {
+    final previous = log(date: '2026-09-05', endingBirds: 5198, flockAge: 130);
+    final input = log(
+      date: '2026-09-08',
+      endingBirds: 0,
+      mortality: 2,
+      flockAge: 0,
+    );
+
+    final result = PoultryCalculationService.calculate(
+      input: input,
+      previous: previous,
+    );
+
+    expect(result.flockAge, 135);
+  });
+
+  test('rejects daily logs before 27 Apr 2026', () {
+    final input = PoultryLog(
+      date: DateTime(2026, 4, 26),
+      flockAge: 0,
+      startingBirds: 100,
+      mortality: 0,
+      endingBirds: 100,
+      trays: 1,
+      totalEggs: 30,
+      avgTrayWeight: 1000,
+      feedConsumed: 10,
+      stoneGritConsumed: 1,
+      waterIntake: 10,
+      automatedFCR: 10,
+      layingPercentage: 30,
+    );
+
+    expect(
+      () => PoultryCalculationService.calculate(
+        input: input,
+        previous: input,
+      ),
+      throwsStateError,
+    );
+  });
+  }

@@ -1,4 +1,5 @@
 import '../models/poultry_log.dart';
+import 'farm_config.dart';
 
 class PoultryCalculationService {
   static const int eggsPerTray = 30;
@@ -24,6 +25,7 @@ class PoultryCalculationService {
     final laying = ending > 0 ? (eggs / ending) * 100 : 0.0;
 
     return input.copyWith(
+      flockAge: FarmConfig.flockAgeOn(input.date),
       startingBirds: starting,
       endingBirds: ending,
       totalEggs: eggs,
@@ -47,8 +49,10 @@ class PoultryCalculationService {
     if (input.mortality < 0) {
       throw StateError('Mortality cannot be negative.');
     }
-    if (input.flockAge < 0) {
-      throw StateError('Flock age cannot be negative.');
+    final date = normalizeDate(input.date);
+    final minimumLogDate = DateTime(2026, 4, 27);
+    if (date.isBefore(minimumLogDate)) {
+      throw StateError('Daily Log date cannot be before 27 Apr 2026.');
     }
   }
 }
