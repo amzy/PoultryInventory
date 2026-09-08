@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class PoultryLog {
   final DateTime date;
@@ -14,6 +15,8 @@ class PoultryLog {
   final double waterIntake;
   final double automatedFCR;
   final double layingPercentage;
+  final String previousDateKey;
+  final int previousEndingBirds;
 
   PoultryLog({
     required this.date,
@@ -29,6 +32,8 @@ class PoultryLog {
     required this.waterIntake,
     required this.automatedFCR,
     required this.layingPercentage,
+    this.previousDateKey = '',
+    this.previousEndingBirds = 0,
   });
 
   factory PoultryLog.fromSheetRow(List<Object?> row) {
@@ -64,8 +69,30 @@ class PoultryLog {
       waterIntake: parseDouble(row[10]),
       automatedFCR: parseDouble(row[11]),
       layingPercentage: parseDouble(row[12]),
+      previousDateKey: '',
+      previousEndingBirds: 0,
     );
   }
+
+  PoultryLog copyWith({DateTime? date, int? flockAge, int? startingBirds, int? endingBirds, int? totalEggs, double? automatedFCR, double? layingPercentage, String? previousDateKey, int? previousEndingBirds}) => PoultryLog(
+    date: date ?? this.date, flockAge: flockAge ?? this.flockAge, startingBirds: startingBirds ?? this.startingBirds, mortality: mortality,
+    endingBirds: endingBirds ?? this.endingBirds, trays: trays, totalEggs: totalEggs ?? this.totalEggs,
+    avgTrayWeight: avgTrayWeight, feedConsumed: feedConsumed, stoneGritConsumed: stoneGritConsumed,
+    waterIntake: waterIntake, automatedFCR: automatedFCR ?? this.automatedFCR, layingPercentage: layingPercentage ?? this.layingPercentage, previousDateKey: previousDateKey ?? this.previousDateKey, previousEndingBirds: previousEndingBirds ?? this.previousEndingBirds);
+
+  factory PoultryLog.fromFirestore(Map<String, dynamic> data) {
+    DateTime date = (data['date'] is Timestamp) ? (data['date'] as Timestamp).toDate() : DateTime.parse(data['dateKey'] as String);
+    double d(dynamic v) => (v as num?)?.toDouble() ?? 0;
+    int i(dynamic v) => (v as num?)?.toInt() ?? 0;
+    return PoultryLog(date: date, flockAge: i(data['flockAge']), startingBirds: i(data['startingBirds']), mortality: i(data['mortality']), endingBirds: i(data['endingBirds']), trays: d(data['trays']), totalEggs: i(data['totalEggs']), avgTrayWeight: d(data['avgTrayWeight']), feedConsumed: d(data['feedConsumed']), stoneGritConsumed: d(data['stoneGritConsumed']), waterIntake: d(data['waterIntake']), automatedFCR: d(data['automatedFCR']), layingPercentage: d(data['layingPercentage']), previousDateKey: data['previousDateKey']?.toString() ?? '', previousEndingBirds: i(data['previousEndingBirds']));
+  }
+
+  Map<String, dynamic> toFirestore() => {
+    'date': Timestamp.fromDate(date), 'dateKey': DateFormat('yyyy-MM-dd').format(date), 'flockAge': flockAge,
+    'startingBirds': startingBirds, 'mortality': mortality, 'endingBirds': endingBirds, 'trays': trays, 'totalEggs': totalEggs,
+    'avgTrayWeight': avgTrayWeight, 'feedConsumed': feedConsumed, 'stoneGritConsumed': stoneGritConsumed, 'waterIntake': waterIntake,
+    'automatedFCR': automatedFCR, 'layingPercentage': layingPercentage, 'previousDateKey': previousDateKey, 'previousEndingBirds': previousEndingBirds, 'updatedAt': FieldValue.serverTimestamp(),
+  };
 
   List<Object?> toSheetRow() => <Object?>[
         DateFormat('yyyy-MM-dd').format(date),

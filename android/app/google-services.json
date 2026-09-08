@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "395473159192",
+    "project_id": "poultryinventory",
+    "storage_bucket": "poultryinventory.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:395473159192:android:3ae327a155b9676d6fef6d",
+        "android_client_info": {
+          "package_name": "com.amzy.poultryinventory"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "395473159192-7i9le93o7tt2nsva4bq8dasf67i9bnrj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeOx2tor6BHvENN-sgbYuwHBEmncLm7QA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "395473159192-7i9le93o7tt2nsva4bq8dasf67i9bnrj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,149 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function dailyLogShape(data) {
+      return data.keys().hasOnly([
+        'date', 'dateKey', 'flockAge', 'startingBirds', 'mortality',
+        'endingBirds', 'trays', 'totalEggs', 'avgTrayWeight',
+        'feedConsumed', 'stoneGritConsumed', 'waterIntake',
+        'automatedFCR', 'layingPercentage', 'previousDateKey',
+        'previousEndingBirds', 'updatedAt'
+      ])
+      && data.date is timestamp
+      && data.dateKey is string
+      && data.flockAge is int
+      && data.startingBirds is int
+      && data.mortality is int
+      && data.endingBirds is int
+      && data.trays is number
+      && data.totalEggs is int
+      && data.avgTrayWeight is number
+      && data.feedConsumed is number
+      && data.stoneGritConsumed is number
+      && data.waterIntake is number
+      && data.automatedFCR is number
+      && data.layingPercentage is number
+      && data.previousDateKey is string
+      && data.previousEndingBirds is int
+      && data.updatedAt is timestamp;
+    }
+
+    function dailyLogValues(data) {
+      return data.flockAge >= 0
+      && data.startingBirds >= 0
+      && data.mortality >= 0
+      && data.mortality <= data.startingBirds
+      && data.endingBirds == data.startingBirds - data.mortality
+      && data.trays >= 0
+      && data.totalEggs >= 0
+      // Flutter uses round(trays * 30). This range validates the rounded value.
+      && data.totalEggs >= data.trays * 30 - 0.5
+      && data.totalEggs < data.trays * 30 + 0.5
+      && data.avgTrayWeight >= 0
+      && data.feedConsumed >= 0
+      && data.stoneGritConsumed >= 0
+      && data.waterIntake >= 0
+      && data.automatedFCR >= 0
+      && data.layingPercentage >= 0
+      // Allow a tiny floating-point tolerance for client-side division.
+      && (
+        (data.trays == 0 && data.automatedFCR == 0)
+        || (data.trays > 0
+          && data.automatedFCR >= data.feedConsumed / data.trays - 0.000001
+          && data.automatedFCR <= data.feedConsumed / data.trays + 0.000001)
+      )
+      && (
+        (data.endingBirds == 0 && data.layingPercentage == 0)
+        || (data.endingBirds > 0
+          && data.layingPercentage >= data.totalEggs / data.endingBirds * 100 - 0.000001
+          && data.layingPercentage <= data.totalEggs / data.endingBirds * 100 + 0.000001)
+      );
+    }
+
+    function dailyChainValid(userId, data) {
+      return data.previousDateKey != ''
+      && data.previousDateKey < data.dateKey
+      && data.previousEndingBirds >= 0
+      && data.startingBirds == data.previousEndingBirds
+      && getAfter(
+        /databases/$(database)/documents/users/$(userId)/daily_logs/$(data.previousDateKey)
+      ).data.endingBirds == data.previousEndingBirds;
+    }
+
+    function dailyLogValid(userId, data) {
+      return dailyLogShape(data)
+        && dailyLogValues(data)
+        && dailyChainValid(userId, data);
+    }
+
+    function expenseShape(data) {
+      return data.keys().hasOnly([
+        'date', 'dateKey', 'category', 'description',
+        'amount', 'unit', 'quantity', 'createdAt'
+      ])
+      && data.date is timestamp
+      && data.dateKey is string
+      && data.category is string
+      && data.description is string
+      && data.amount is number
+      && data.unit is string
+      && data.quantity is number
+      && data.createdAt is timestamp;
+    }
+
+    function expenseValues(data) {
+      return data.category in [
+        'Medical', 'Feed', 'Grit', 'Other_Expenses', 'Egg_Sales'
+      ]
+      && data.amount >= 0
+      && data.quantity >= 0
+      && data.category.size() <= 40
+      && data.description.size() <= 500
+      && data.unit.size() <= 30;
+    }
+
+    match /users/{userId} {
+      allow read, write: if false;
+
+      match /daily_logs/{logId} {
+        allow read: if signedIn(userId);
+        allow create: if signedIn(userId)
+          && request.resource.data.dateKey == logId
+          && request.resource.data.updatedAt == request.time
+          && dailyLogValid(userId, request.resource.data);
+
+        allow update: if signedIn(userId)
+          && request.resource.data.dateKey == logId
+          && request.resource.data.dateKey == resource.data.dateKey
+          && request.resource.data.updatedAt == request.time
+          && dailyLogValid(userId, request.resource.data);
+
+        // Daily Logs are intentionally not client-deletable. A delete would
+        // break the bird-count chain and should be handled by a future admin
+        // migration tool if needed.
+        allow delete: if false;
+      }
+
+      match /expense_records/{recordId} {
+        allow read: if signedIn(userId);
+        allow create: if signedIn(userId)
+          && expenseShape(request.resource.data)
+          && expenseValues(request.resource.data);
+        allow update: if signedIn(userId)
+          && expenseShape(request.resource.data)
+          && expenseValues(request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if signedIn(userId);
+      }
+    }
+
+    // No wildcard catch-all: new collections are denied until explicitly
+    // secured here. This prevents accidental exposure of future data.
+  }
+}

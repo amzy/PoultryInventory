@@ -1,11 +1,11 @@
 {
-    "name": "poultry_inventory",
-    "short_name": "poultry_inventory",
+    "name": "Poultry Inventory",
+    "short_name": "Poultry Inventory",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Poultry farm inventory, flock, production, expenses and egg sales management.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

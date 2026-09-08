@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ExpenseSalesLog {
   final DateTime date;
@@ -50,6 +51,19 @@ class ExpenseSalesLog {
       quantity: parseDouble(row[5]),
     );
   }
+
+
+  factory ExpenseSalesLog.fromFirestore(Map<String, dynamic> data) {
+    final raw = data['date'];
+    final date = raw is Timestamp ? raw.toDate() : DateTime.parse(data['dateKey'] as String);
+    double d(dynamic v) => (v as num?)?.toDouble() ?? 0;
+    return ExpenseSalesLog(date: date, category: data['category']?.toString() ?? '', description: data['description']?.toString() ?? '', amount: d(data['amount']), unit: data['unit']?.toString() ?? '', quantity: d(data['quantity']));
+  }
+
+  Map<String, dynamic> toFirestore() => {
+    'date': Timestamp.fromDate(date), 'dateKey': DateFormat('yyyy-MM-dd').format(date), 'category': category,
+    'description': description, 'amount': amount, 'unit': unit, 'quantity': quantity, 'createdAt': FieldValue.serverTimestamp(),
+  };
 
   List<dynamic> toExcelRow() {
     return [

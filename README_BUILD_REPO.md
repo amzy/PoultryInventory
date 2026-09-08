@@ -7,7 +7,7 @@ This is a complete Flutter project copy intended to live in a separate private G
 - Android project (`android/`)
 - Web project (`web/`)
 - App icon assets (`assets/app_icons/`)
-- Google Sheets integration
+- Firebase / Cloud Firestore integration
 - Daily Log automatic Starting Birds calculation
 - GitHub Actions mobile build workflow
 - iOS preparation script (`scripts/prepare_ios.sh`)

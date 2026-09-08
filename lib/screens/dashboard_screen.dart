@@ -1,5 +1,4 @@
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -8,7 +7,6 @@ import '../providers/poultry_provider.dart';
 import 'log_form_screen.dart';
 import 'log_detail_screen.dart';
 import 'expense_sales_form_screen.dart';
-import '../widgets/google_sign_in_button.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -66,26 +64,16 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             actions: [
               IconButton(
-                tooltip: provider.isGoogleSignedIn
-                    ? 'Sync Google Sheet'
-                    : (kIsWeb && provider.isGoogleAuthenticated
-                        ? 'Allow Google Sheets'
-                        : 'Sign in with Google'),
+                tooltip: provider.isGoogleSignedIn ? 'Sync Firebase' : 'Sign in with Google',
                 icon: Icon(
-                  provider.isGoogleSignedIn ? Icons.sync : Icons.login,
+                  provider.isGoogleSignedIn ? Icons.cloud_sync : Icons.login,
                   color: provider.isGoogleSignedIn ? Colors.white : const Color(0xFF67E8F9),
                   size: 21,
                 ),
                 onPressed: provider.isSigningIn
                     ? null
                     : () async {
-                        if (provider.isGoogleSignedIn) {
-                          await provider.fetchLogs();
-                        } else if (kIsWeb && provider.isGoogleAuthenticated) {
-                          await provider.authorizeGoogleSheets();
-                        } else if (!kIsWeb) {
-                          await provider.signInToGoogle();
-                        }
+                        await provider.signInToGoogle();
                       },
               ),
             ],
@@ -185,7 +173,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           _sectionTitle('Recent Expense & Sales Records', Icons.receipt_long),
           const SizedBox(height: 10),
           if (records.isEmpty)
-            _emptyCard('No expense or sales records found in Google Sheet.')
+            _emptyCard('No expense or sales records found.')
           else
             ...records.take(20).map(_expenseTile),
         ],
@@ -196,87 +184,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildGoogleSyncCard(PoultryProvider provider) {
     final connected = provider.isGoogleSignedIn;
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: connected
-            ? const Color(0xFF16A34A).withOpacity(.12)
-            : const Color(0xFF0EA5E9).withOpacity(.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: connected
-              ? const Color(0xFF4ADE80).withOpacity(.30)
-              : const Color(0xFF67E8F9).withOpacity(.30),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            connected ? Icons.cloud_done : Icons.cloud_off,
-            color: connected ? const Color(0xFF4ADE80) : const Color(0xFF67E8F9),
-            size: 26,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  connected ? 'Google Sheet Connected' : 'Google Sheet Not Connected',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  provider.isSigningIn
-                      ? (kIsWeb && provider.isGoogleAuthenticated
-                          ? 'Google account connected. Allow Google Sheets access to continue.'
-                          : 'Use the Google button to sign in.')
-                      : (provider.isLoading && !connected
-                          ? 'Checking Google connection…'
-                          : (connected
-                              ? 'Daily logs and expenses/sales are synced with Google Sheets.'
-                              : (kIsWeb && provider.isGoogleAuthenticated
-                                  ? 'Google account connected. Allow Google Sheets access.'
-                                  : 'Sign in to load and save all daily logs and expenses/sales.'))),
-                  style: const TextStyle(color: Colors.white60, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (kIsWeb && !connected)
-            SizedBox(
-              width: 210,
-              height: 42,
-              child: provider.isGoogleAuthenticated
-                  ? OutlinedButton.icon(
-                      onPressed: provider.isSigningIn ? null : provider.authorizeGoogleSheets,
-                      icon: provider.isSigningIn
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.table_chart_outlined, size: 17),
-                      label: Text(provider.isSigningIn ? 'Authorizing…' : 'Allow Google Sheets'),
-                    )
-                  : const GoogleWebSignInButton(),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: provider.isSigningIn
-                  ? null
-                  : () async {
-                      await provider.fetchLogs();
-                    },
-              icon: provider.isSigningIn
-                  ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.sync, size: 17),
-              label: Text(provider.isSigningIn ? 'Syncing…' : 'Sync'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: BorderSide(color: Colors.white.withOpacity(.25)),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            ),
-          ),
-        ],
-      ),
+      margin: const EdgeInsets.only(bottom: 14), padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: connected ? const Color(0xFF16A34A).withOpacity(.12) : const Color(0xFF0EA5E9).withOpacity(.12), borderRadius: BorderRadius.circular(14), border: Border.all(color: connected ? const Color(0xFF4ADE80).withOpacity(.30) : const Color(0xFF67E8F9).withOpacity(.30))),
+      child: Row(children: [Icon(connected ? Icons.cloud_done : Icons.cloud_off, color: connected ? const Color(0xFF4ADE80) : const Color(0xFF67E8F9), size: 26), const SizedBox(width:10), Expanded(child: Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(connected?'Firebase Connected':'Firebase Not Connected',style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w700,fontSize:13)),const SizedBox(height:3),Text(connected?'Data is stored securely in Cloud Firestore.':'Sign in with Google to load and save farm data.',style:const TextStyle(color:Colors.white60,fontSize:11))])), const SizedBox(width:8), OutlinedButton.icon(onPressed: provider.isSigningIn?null:provider.signInToGoogle, icon: provider.isSigningIn?const SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2)):Icon(connected?Icons.sync:Icons.login,size:17), label:Text(provider.isSigningIn?'Connecting…':connected?'Sync':'Sign in'))]),
     );
   }
 
@@ -348,7 +258,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       ]);
 
   Widget _buildRecentLogs(PoultryProvider provider) {
-    if (provider.logs.isEmpty) return _emptyCard('No daily log records found in Google Sheet.');
+    if (provider.logs.isEmpty) return _emptyCard('No daily log records found.');
     return Column(children: provider.logs.take(8).map((log) {
       return Container(
         margin: const EdgeInsets.only(bottom: 8),
