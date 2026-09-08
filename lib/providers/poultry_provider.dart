@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart' hide FirebaseService;
 import '../models/poultry_log.dart';
 import '../models/expense_sales_log.dart';
 import '../services/firebase_service.dart';
@@ -21,11 +22,39 @@ class PoultryProvider with ChangeNotifier {
   bool get isSigningIn => _isSigningIn;
   PoultryProvider() { _authSub = _firebase.authChanges.listen((_) { notifyListeners(); if (_firebase.isSignedIn) fetchLogs(); }); _startup(); }
   Future<void> _startup() async { _isLoading=true; notifyListeners(); try { if (_firebase.isSignedIn) await _reload(); } catch(e){_errorMessage='Unable to load Firebase data: $e';} finally{_isLoading=false;notifyListeners();} }
-  Future<void> _reload() async { final r=await Future.wait([_firebase.fetchLogs(),_firebase.fetchExpenseRecords()]); _logs=(r[0] as List<PoultryLog>)..sort((a,b)=>b.date.compareTo(a.date)); _expenseRecords=(r[1] as List<ExpenseSalesLog>)..sort((a,b)=>b.date.compareTo(a.date)); }
+  Future<void> _reload() async { final logs = await _firebase.fetchLogs(); final expenses = await _firebase.fetchExpenseRecords(); _logs = List<PoultryLog>.from(logs)..sort((a,b)=>b.date.compareTo(a.date)); _expenseRecords = List<ExpenseSalesLog>.from(expenses)..sort((a,b)=>b.date.compareTo(a.date)); }
   Future<void> fetchLogs() async { if(!_firebase.isSignedIn)return; _isLoading=true;notifyListeners();try{await _reload();_errorMessage=null;}catch(e){_errorMessage='Error loading Firebase data: $e';}finally{_isLoading=false;notifyListeners();} }
-  Future<void> addLog(PoultryLog log) async { try{await _firebase.addDailyLog(log);await fetchLogs();}catch(e){_errorMessage='Daily log was not saved: $e';notifyListeners();rethrow;} }
+  Future<void> addLog(PoultryLog log) async {
+    try {
+      await _firebase.addDailyLog(log);
+      await fetchLogs();
+    } on FirebaseException catch (e) {
+      _errorMessage = e.code == 'permission-denied'
+          ? 'Daily log was not saved: Firestore permissions rejected the write. Deploy the latest firestore.rules to the poultryinventory project.'
+          : 'Daily log was not saved: ${e.message ?? e.code}';
+      notifyListeners();
+      rethrow;
+    } catch (e) {
+      _errorMessage = 'Daily log was not saved: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
   Future<void> updateLog(PoultryLog log) async { try{await _firebase.updateDailyLog(log);await fetchLogs();}catch(e){_errorMessage='Daily log was not updated: $e';notifyListeners();rethrow;} }
   Future<void> addExpenseRecord(ExpenseSalesLog record) async { try{await _firebase.addExpenseRecord(record);await fetchLogs();}catch(e){_errorMessage='Expense/sale was not saved: $e';notifyListeners();rethrow;} }
+  Future<void> updateExpenseRecord(ExpenseSalesLog record) async { try{await _firebase.updateExpenseRecord(record);await fetchLogs();}catch(e){_errorMessage='Expense/sale was not updated: $e';notifyListeners();rethrow;} }
+  Future<int> importCashewRecords(List<Map<String, dynamic>> records) async {
+    try {
+      final imported = await _firebase.importCashewRecords(records);
+      await fetchLogs();
+      _errorMessage = null;
+      return imported;
+    } catch (e) {
+      _errorMessage = 'Cashew import failed: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
   Future<void> signInToGoogle() async {if(_isSigningIn)return;_isSigningIn=true;notifyListeners();try{await _firebase.signIn();await _reload();}catch(e){_errorMessage='Firebase sign-in failed: $e';}finally{_isSigningIn=false;notifyListeners();}}
   Future<void> authorizeGoogleSheets() async {}
   Future<void> signOutOfGoogle() async {await _firebase.signOut();_logs=[];_expenseRecords=[];notifyListeners();}

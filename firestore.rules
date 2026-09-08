@@ -31,7 +31,7 @@ service cloud.firestore {
       && data.layingPercentage is number
       && data.previousDateKey is string
       && data.previousEndingBirds is int
-      && data.updatedAt is timestamp;
+      && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
     function dailyLogValues(data) {
@@ -95,11 +95,12 @@ service cloud.firestore {
 
     function expenseShape(data) {
       return data.keys().hasOnly([
-        'date', 'dateKey', 'category', 'description',
+        'date', 'dateKey', 'mainCategory', 'category', 'description',
         'amount', 'unit', 'quantity', 'createdAt'
       ])
       && data.date is timestamp
       && data.dateKey is string
+      && data.mainCategory is string
       && data.category is string
       && data.description is string
       && data.amount is number
@@ -109,12 +110,12 @@ service cloud.firestore {
     }
 
     function expenseValues(data) {
-      return data.category in [
-        'Medical', 'Feed', 'Grit', 'Electricity', 'Tray', 'Other_Expenses', 'Egg_Sales'
-      ]
+      return data.mainCategory.size() > 0
+      && data.category.size() > 0
       && data.amount >= 0
       && data.quantity >= 0
-      && data.category.size() <= 40
+      && data.mainCategory.size() <= 80
+      && data.category.size() <= 120
       && data.description.size() <= 500
       && data.unit.size() <= 30
       && (data.category != 'Electricity' || (data.unit == 'rupees' && data.quantity == 0))
@@ -128,13 +129,11 @@ service cloud.firestore {
         allow read: if signedIn(userId);
         allow create: if signedIn(userId)
           && request.resource.data.dateKey == logId
-          && request.resource.data.updatedAt == request.time
           && dailyLogValid(userId, request.resource.data);
 
         allow update: if signedIn(userId)
           && request.resource.data.dateKey == logId
           && request.resource.data.dateKey == resource.data.dateKey
-          && request.resource.data.updatedAt == request.time
           && dailyLogValid(userId, request.resource.data);
 
         // Daily Logs are intentionally not client-deletable. A delete would

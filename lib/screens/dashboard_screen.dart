@@ -5,9 +5,11 @@ import 'package:intl/intl.dart';
 import '../models/expense_sales_log.dart';
 import '../providers/poultry_provider.dart';
 import '../widgets/app_shell.dart';
+import '../services/farm_config.dart';
 import 'log_form_screen.dart';
 import 'log_detail_screen.dart';
 import 'expense_sales_form_screen.dart';
+import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,10 +20,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
 
   void _navigate(int index) {
-    if (index == 7) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings screen will be available here.')));
-      return;
-    }
     if (_selectedIndex == index) return;
     setState(() => _selectedIndex = index);
   }
@@ -45,6 +43,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           onEmbeddedBack: () => _navigate(0),
           key: ValueKey('expense-$_selectedIndex'),
         );
+      case 7:
+        return const SettingsScreen(embedded: true, key: ValueKey('settings'));
       default:
         return _dashboardBody(provider);
     }
@@ -57,16 +57,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final category = isExpense ? poultryNavItems[_selectedIndex].label : '';
       return PoultryAppShell(
         selectedIndex: _selectedIndex,
-        title: _selectedIndex == 0
-            ? 'Dashboard'
-            : _selectedIndex == 1
-                ? 'Add Daily Log'
-                : 'Add ${category == 'Egg Sales' ? 'Egg Sales' : 'Expense'}',
-        subtitle: _selectedIndex == 0
-            ? 'Overview of your poultry farm'
-            : _selectedIndex == 1
-                ? 'Track daily flock data'
-                : 'Record farm financial activity',
+        title: _pageTitle(category),
+        subtitle: _pageSubtitle(),
         trailing: _selectedIndex == 0 ? _syncButton(provider) : null,
         onNavigate: _navigate,
         child: AnimatedSwitcher(
@@ -85,6 +77,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       );
     });
+  }
+
+  String _pageTitle(String category) {
+    if (_selectedIndex == 0) return 'Dashboard';
+    if (_selectedIndex == 1) return 'Add Daily Log';
+    if (_selectedIndex == 7) return 'Settings';
+    return 'Add ${category == 'Egg Sales' ? 'Egg Sales' : 'Expense'}';
+  }
+
+  String _pageSubtitle() {
+    if (_selectedIndex == 0) return 'Overview of your poultry farm';
+    if (_selectedIndex == 1) return 'Track daily flock data';
+    if (_selectedIndex == 7) return 'App preferences and data tools';
+    return 'Record farm financial activity';
   }
 
   Widget _syncButton(PoultryProvider provider) => SizedBox(
@@ -117,6 +123,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (wide) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: _eggProduction(provider)), const SizedBox(width: 14), Expanded(child: _expenseChart(provider))])
             else ...[_eggProduction(provider), const SizedBox(height: 14), _expenseChart(provider)],
             const SizedBox(height: 14),
+            _expenseGroups(provider),
+            const SizedBox(height: 14),
             _recentLogs(provider),
             const SizedBox(height: 14),
             _quickActions(),
@@ -134,6 +142,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _metrics(PoultryProvider p, bool wide) {
     final items = [
+      ('Flock Age', '${FarmConfig.flockAgeOn(DateTime.now())} days', Icons.timelapse_outlined, const Color(0xFF7C3AED)),
       ('Birds', '${p.totalBirds}', Icons.pets_outlined, const Color(0xFF0E9F6E)),
       ('Eggs', NumberFormat('#,##0').format(p.totalEggs), Icons.egg_alt_outlined, const Color(0xFFF59E0B)),
       ('Feed', '${p.totalFeedKg.toStringAsFixed(0)} kg', Icons.inventory_2_outlined, const Color(0xFF15803D)),
@@ -141,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ('Expenses', _money(p.totalExpenses), Icons.monetization_on_outlined, const Color(0xFFEA580C)),
     ];
     return LayoutBuilder(builder: (context, c) {
-      final count = wide ? 5 : c.maxWidth >= 650 ? 3 : 2;
+      final count = wide ? 6 : c.maxWidth >= 800 ? 3 : c.maxWidth >= 650 ? 2 : 2;
       final w = (c.maxWidth - (count - 1) * 10) / count;
       return Wrap(spacing: 10, runSpacing: 10, children: items.map((e) => SizedBox(width: w, child: _metricCard(e.$1, e.$2, e.$3, e.$4))).toList());
     });
@@ -163,6 +172,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Expenses & Sales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
       const SizedBox(height: 8), SizedBox(height: 190, child: Row(children: [Expanded(child: CustomPaint(painter: _PieChartPainter(values), child: const SizedBox.expand())), const SizedBox(width: 12), Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: const [Text('Feed', style: TextStyle(fontSize: 11)), Text('Medical', style: TextStyle(fontSize: 11)), Text('Grit', style: TextStyle(fontSize: 11)), Text('Other', style: TextStyle(fontSize: 11)), Text('Egg Sales', style: TextStyle(fontSize: 11))]))]))
+    ]));
+  }
+
+  Widget _expenseGroups(PoultryProvider p) {
+    final groups = <String, double>{};
+    for (final e in p.expenseRecords.where((e) => e.category != 'Egg_Sales')) {
+      final key = e.mainCategory.trim().isEmpty ? 'Uncategorized' : e.mainCategory.trim();
+      groups[key] = (groups[key] ?? 0) + e.amount;
+    }
+    final entries = groups.entries.toList()..sort((a,b) => b.value.compareTo(a.value));
+    return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Expenses by Main Category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
+      const SizedBox(height: 10),
+      if (entries.isEmpty) const Text('No expense groups yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A)))
+      else ...entries.take(8).map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+        Expanded(child: Text(e.key, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
+        Text(_money(e.value), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0E9F6E))),
+      ]))),
     ]));
   }
 
