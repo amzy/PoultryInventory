@@ -22,7 +22,7 @@ class ExpenseSalesLog {
   ExpenseSalesLog({
     this.id,
     required this.date,
-    this.mainCategory = 'Poultry',
+    this.mainCategory = 'Layer Bird',
     required this.category,
     String? originalCategory,
     this.account = 'Amzad Khan',
@@ -44,7 +44,7 @@ class ExpenseSalesLog {
       date: date,
       mainCategory: data['mainCategory']?.toString().trim().isNotEmpty == true
           ? data['mainCategory'].toString()
-          : 'Poultry',
+          : 'Layer Bird',
       category: category,
       originalCategory: data['originalCategory']?.toString().trim().isNotEmpty == true
           ? data['originalCategory'].toString()
@@ -65,7 +65,7 @@ class ExpenseSalesLog {
   Map<String, dynamic> toFirestore({bool includeCreatedAt = true}) => {
     'date': Timestamp.fromDate(date),
     'dateKey': DateFormat('yyyy-MM-dd').format(date),
-    'mainCategory': mainCategory.trim().isEmpty ? 'Poultry' : mainCategory.trim(),
+    'mainCategory': mainCategory.trim().isEmpty ? 'Layer Bird' : mainCategory.trim(),
     'category': category.trim(),
     'originalCategory': originalCategory.trim().isEmpty ? category.trim() : originalCategory.trim(),
     'account': account.trim().isEmpty ? 'Amzad Khan' : account.trim(),

@@ -43,6 +43,18 @@ class PoultryProvider with ChangeNotifier {
   Future<void> updateLog(PoultryLog log) async { try{await _firebase.updateDailyLog(log);await fetchLogs();}catch(e){_errorMessage='Daily log was not updated: $e';notifyListeners();rethrow;} }
   Future<void> addExpenseRecord(ExpenseSalesLog record) async { try{await _firebase.addExpenseRecord(record);await fetchLogs();}catch(e){_errorMessage='Expense/sale was not saved: $e';notifyListeners();rethrow;} }
   Future<void> updateExpenseRecord(ExpenseSalesLog record) async { try{await _firebase.updateExpenseRecord(record);await fetchLogs();}catch(e){_errorMessage='Expense/sale was not updated: $e';notifyListeners();rethrow;} }
+  Future<int> deleteImportedCashewRecords() async {
+    try {
+      final deleted = await _firebase.deleteImportedCashewRecords();
+      await fetchLogs();
+      _errorMessage = null;
+      return deleted;
+    } catch (e) {
+      _errorMessage = 'Unable to delete imported Cashew records: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
   Future<CashewImportResult> importCashewRecords(List<Map<String, dynamic>> records) async {
     try {
       final imported = await _firebase.importCashewRecords(records);

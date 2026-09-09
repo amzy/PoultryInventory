@@ -1,47 +1,66 @@
 # Cashew SQLite Import
 
-The Settings screen imports the original Cashew export directly. Cashew files commonly use a `.sql` extension even though the file is a SQLite 3 database.
+The Settings screen imports the original Cashew SQLite export directly. Cashew files commonly use a `.sql` extension even though the file itself is a SQLite 3 database.
 
-## Supported files
+## Safe reset + import workflow
 
-- `.sql`
-- `.db`
-- `.sqlite`
-- `.sqlite3`
+The current migration data can be discarded while the sync is being finalized because imported records are identifiable by their `cashew_` document IDs.
 
-No JSON conversion is required.
+1. In **Settings**, choose **Delete Old Imported Cashew Data**.
+2. Confirm the deletion.
+3. Choose **Sync Cashew SQLite Data** and select the original SQLite export.
+4. Verify the imported totals and categories before starting new financial data entry.
 
-## Import behavior
+The delete action removes only importer-created `cashew_*` expense records. Manual expense records and Daily Logs are not deleted.
+
+## Sync behavior
 
 Each Cashew transaction gets a deterministic Firestore ID:
 
 `cashew_<transactionId>`
 
-The import is an **upsert/sync**, not a skip-only migration:
+After the initial clean import, importing the same SQLite export again is an upsert/sync:
 
 - New transaction → imported.
 - Existing transaction with identical current values → unchanged.
-- Existing transaction whose category, account, amount, description, date, unit, quantity, or expense/credit type differs → updated to the current SQLite source and current app mapping rules.
+- Existing transaction whose category, account, amount, description, date, unit, quantity, or expense/credit type differs → updated.
 
-This means importing the same SQLite export again is safe and also repairs older imported transactions that used the previous category mapping.
+## Current category mappings
 
-## Category mappings
+Only these financial main categories are valid:
 
-The existing explicit mappings remain centralized in `expense_category_config.dart`:
+- Layer Bird
+- Chiks
+- Renovation
+- Augar Work
 
-- Layer Feed → Feed
-- Stone → Grit
-- Health → Medical
-- Dr Fee → Medical
-- Healthcare → Medical
-- Vaccine → Vaccine
-- Construction Labor → Labor
-- Construction Materials → Materials
-- Steel Labor → Labor
-- Material → Material
-- Labor work → Labor
+Cashew source mappings include:
 
-Unknown categories are preserved rather than guessed.
+- Layer Feed → Layer Bird / Feed
+- Stone → Layer Bird / Grit
+- Health → Layer Bird / Medical
+- Dr Fee → Chiks / Medical
+- Healthcare → Chiks / Medical
+- Vaccine → corresponding main category / Vaccine
+- Construction Labor → Renovation / Labor
+- Construction Materials → Renovation / Materials
+- Steel Labor → Renovation / Labor
+- Material → Augar Work / Material
+- Labor work → Augar Work / Labor
+- Electricity → Layer Bird / Electricity
+
+If the source has no separate subcategory and the source category is itself a top-level work category, it maps to `Other Expenses` while `originalCategory` preserves the source value.
+
+Unsupported source categories/subcategories are rejected before Firestore writes begin, so an unexpected source record cannot silently create data outside the current model.
+
+## Account preservation
+
+The source account is copied to each transaction. The current known accounts are:
+
+- Amzad Khan
+- Sarfaraj Khan
+
+The importer does not merge accounts.
 
 ## Web build requirement
 
@@ -51,4 +70,4 @@ The SQLite WASM runtime must exist at `web/sqlite3.wasm` for browser imports. Ru
 ./scripts/setup_sqlite_web.sh
 ```
 
-before building the web app. The script downloads the matching SQLite WASM build for `sqlite3 2.9.x`.
+before building the web app.

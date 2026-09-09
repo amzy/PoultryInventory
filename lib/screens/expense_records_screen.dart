@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/expense_sales_log.dart';
 import '../providers/poultry_provider.dart';
+import '../services/expense_category_config.dart';
 import '../widgets/app_shell.dart';
 
 class ExpenseRecordsScreen extends StatelessWidget {
@@ -113,30 +114,75 @@ class ExpenseRecordsScreen extends StatelessWidget {
   );
 
   Future<void> _edit(BuildContext context, ExpenseSalesLog record) async {
-    final main = TextEditingController(text: record.mainCategory);
-    final category = TextEditingController(text: record.category);
+    var selectedMain = ExpenseCategoryConfig.isValidMainCategory(record.mainCategory)
+        ? record.mainCategory
+        : ExpenseCategoryConfig.mainCategories.first;
+    var selectedCategory = ExpenseCategoryConfig.isValidSubcategory(selectedMain, record.category)
+        ? record.category
+        : ExpenseCategoryConfig.subcategoriesFor(selectedMain).first;
     final account = TextEditingController(text: record.account);
+
     final result = await showDialog<ExpenseSalesLog>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Update Expense Category'),
-        content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: main, decoration: const InputDecoration(labelText: 'Main Category', hintText: 'e.g. Poultry, Cashew, Farm')),
-          const SizedBox(height: 10),
-          TextField(controller: category, decoration: const InputDecoration(labelText: 'Subcategory', hintText: 'e.g. Feed, Labor, Materials')),
-          const SizedBox(height: 10),
-          TextField(controller: account, decoration: const InputDecoration(labelText: 'Account / Paid By')),
-        ])),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () {
-            if (main.text.trim().isEmpty || category.text.trim().isEmpty) return;
-            Navigator.pop(dialogContext, record.copyWith(mainCategory: main.text.trim(), category: category.text.trim(), account: account.text.trim()));
-          }, child: const Text('Update')),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Update Expense Category'),
+          content: SizedBox(
+            width: 420,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<String>(
+                value: selectedMain,
+                decoration: const InputDecoration(labelText: 'Main Category'),
+                items: ExpenseCategoryConfig.mainCategories
+                    .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setDialogState(() {
+                    selectedMain = value;
+                    final options = ExpenseCategoryConfig.subcategoriesFor(value);
+                    if (!options.contains(selectedCategory)) selectedCategory = options.first;
+                  });
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: selectedCategory,
+                decoration: const InputDecoration(labelText: 'Subcategory'),
+                items: ExpenseCategoryConfig.subcategoriesFor(selectedMain)
+                    .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                    .toList(),
+                onChanged: (value) => setDialogState(() => selectedCategory = value ?? selectedCategory),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: ExpenseCategoryConfig.accounts.contains(account.text) ? account.text : ExpenseCategoryConfig.accounts.first,
+                decoration: const InputDecoration(labelText: 'Account / Paid By'),
+                items: ExpenseCategoryConfig.accounts
+                    .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                    .toList(),
+                onChanged: (value) => account.text = value ?? ExpenseCategoryConfig.accounts.first,
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                dialogContext,
+                record.copyWith(
+                  mainCategory: selectedMain,
+                  category: selectedCategory,
+                  account: account.text,
+                ),
+              ),
+              child: const Text('Update'),
+            ),
+          ],
+        ),
       ),
     );
-    main.dispose(); category.dispose(); account.dispose();
+    account.dispose();
     if (result == null || !context.mounted) return;
     try {
       await context.read<PoultryProvider>().updateExpenseRecord(result);
@@ -144,5 +190,5 @@ class ExpenseRecordsScreen extends StatelessWidget {
     } catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to update expense: $e')));
     }
-  }
+   }
 }

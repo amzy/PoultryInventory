@@ -119,9 +119,25 @@ service cloud.firestore {
       && data.createdAt is timestamp;
     }
 
+    function expenseCategoryValid(data) {
+      return (data.mainCategory == 'Layer Bird' && data.category in [
+        'Feed', 'Medical', 'Vaccine', 'Tray', 'Egg', 'Electricity', 'Grit', 'Other Expenses'
+      ])
+      || (data.mainCategory == 'Chiks' && data.category in [
+        'Feed', 'Vaccine', 'Medical', 'Preparation', 'Water', 'Other Expenses'
+      ])
+      || (data.mainCategory == 'Renovation' && data.category in [
+        'Labor', 'Materials', 'Other Expenses'
+      ])
+      || (data.mainCategory == 'Augar Work' && data.category in [
+        'Labor', 'Material', 'Other Expenses'
+      ]);
+    }
+
     function expenseValues(data) {
       return data.mainCategory.size() > 0
       && data.category.size() > 0
+      && expenseCategoryValid(data)
       && data.amount >= 0
       && data.quantity >= 0
       && data.mainCategory.size() <= 80
@@ -129,9 +145,7 @@ service cloud.firestore {
       && data.originalCategory.size() <= 120
       && data.account.size() <= 80
       && data.description.size() <= 500
-      && data.unit.size() <= 30
-      && (data.category != 'Electricity' || (data.unit == 'rupees' && data.quantity == 0))
-      && (data.category != 'Tray' || data.unit == 'bundle');
+      && data.unit.size() <= 30;
     }
 
     match /users/{userId} {

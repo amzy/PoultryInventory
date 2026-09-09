@@ -267,6 +267,25 @@ class FirebaseService {
   /// transaction ID. Existing Cashew records are deliberately updated rather
   /// than skipped so category/account/amount/type changes in the latest
   /// SQLite export repair old imports to the current app rules.
+  /// Deletes only records created by the Cashew importer. Manual records
+  /// use date-based IDs and are intentionally left untouched.
+  Future<int> deleteImportedCashewRecords() async {
+    final snapshot = await _expenses.get();
+    final imported = snapshot.docs.where((doc) => doc.id.startsWith('cashew_')).toList();
+    if (imported.isEmpty) return 0;
+
+    const batchSize = 400;
+    for (var start = 0; start < imported.length; start += batchSize) {
+      final end = (start + batchSize < imported.length) ? start + batchSize : imported.length;
+      final batch = _db.batch();
+      for (final doc in imported.sublist(start, end)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+    return imported.length;
+  }
+
   Future<CashewImportResult> importCashewRecords(List<Map<String, dynamic>> records) async {
     if (records.isEmpty) return const CashewImportResult();
     final parsed = CashewMigrationParser.parseRecords(records);
@@ -286,11 +305,21 @@ class FirebaseService {
         if (date == null) continue;
 
         final id = 'cashew_$transactionId';
+        final mainCategory = item['mainCategory'] as String;
+        final category = item['category'] as String;
+        if (!ExpenseCategoryConfig.isValidMainCategory(mainCategory) ||
+            !ExpenseCategoryConfig.isValidSubcategory(mainCategory, category)) {
+          throw StateError(
+            'Cashew transaction $transactionId has unsupported mapping: '
+            '$mainCategory / $category.',
+          );
+        }
+
         final record = ExpenseSalesLog(
           id: id,
           date: date,
-          mainCategory: item['mainCategory'] as String,
-          category: item['category'] as String,
+          mainCategory: mainCategory,
+          category: category,
           originalCategory: item['originalCategory'] as String,
           account: item['account'] as String,
           description: (item['description'] as String).length > 500

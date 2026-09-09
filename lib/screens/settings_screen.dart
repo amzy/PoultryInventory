@@ -18,6 +18,45 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _importing = false;
 
+  Future<void> _deleteImportedCashewData() async {
+    if (_importing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete old Cashew import?'),
+        content: const Text(
+          'This deletes only transactions created by the Cashew SQLite importer. '
+          'Manual expense records and Daily Logs are not deleted. Continue?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete Imported Data'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _importing = true);
+    try {
+      final deleted = await context.read<PoultryProvider>().deleteImportedCashewRecords();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted $deleted old imported Cashew transaction(s).')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to delete old Cashew data: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   Future<void> _importCashewData() async {
     if (_importing) return;
 
@@ -66,7 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Text('Data Import', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
               const SizedBox(height: 5),
               const Text(
-                'Import the original Cashew SQLite export directly. Existing imported transactions are updated to the latest category, account, amount and transaction rules.',
+                'First clear the old imported records, then import the original Cashew SQLite export. Sync uses deterministic IDs so the same source can be imported again safely.',
                 style: TextStyle(fontSize: 11, color: Color(0xFF75867D)),
               ),
               const SizedBox(height: 16),
@@ -84,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'The selected .sql file is the original Cashew SQLite database. Category mappings are applied during import, and existing Cashew transactions are updated instead of skipped when the new rules produce different values. Egg sales and poultry Daily Logs are not created from this file.',
+                        'The SQLite import is validated against the four current financial main categories. Electricity is mapped to Layer Bird → Electricity, and source transactions without a specific subcategory use Other Expenses. Accounts are preserved. Daily Logs are never created by this import.',
                         style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157)),
                       ),
                     ),
@@ -110,6 +149,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     backgroundColor: const Color(0xFF0E9F6E),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
                     textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 42,
+                child: OutlinedButton.icon(
+                  onPressed: _importing ? null : _deleteImportedCashewData,
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  label: const Text('Delete Old Imported Cashew Data'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Color(0xFFE5BDBD)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
                   ),
                 ),
               ),

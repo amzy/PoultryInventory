@@ -20,7 +20,8 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
   DateTime _selectedDate = DateTime.now();
   late String _selectedCategory;
   String _selectedAccount = ExpenseCategoryConfig.accounts.first;
-  final _mainCategoryController = TextEditingController(text: 'Poultry');
+  String _selectedMainCategory = ExpenseCategoryConfig.mainCategories.first;
+  final _mainCategoryController = TextEditingController(text: 'Layer Bird');
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
   final _unitController = TextEditingController();
@@ -30,8 +31,8 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
   void initState() {
     super.initState();
     _selectedCategory = widget.initialCategory ?? 'Feed';
-    if (!ExpenseCategoryConfig.subcategoriesFor('Poultry').contains(_selectedCategory)) {
-      _selectedCategory = 'Feed';
+    if (!ExpenseCategoryConfig.subcategoriesFor(_selectedMainCategory).contains(_selectedCategory)) {
+      _selectedCategory = ExpenseCategoryConfig.subcategoriesFor(_selectedMainCategory).first;
     }
   }
 
@@ -51,12 +52,23 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
             const SizedBox(height: 14),
             InkWell(onTap: _pickDate, borderRadius: BorderRadius.circular(11), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8FBF9), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFDCE7E0))), child: Row(children: [const Icon(Icons.calendar_month_outlined, color: Color(0xFF0E9F6E)), const SizedBox(width: 10), Expanded(child: Text(DateFormat('dd MMM yyyy').format(_selectedDate), style: const TextStyle(fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right, color: Color(0xFF71827A))]))),
             const SizedBox(height: 10),
-            _buildTextField(_mainCategoryController, 'Main Category / Phase', TextInputType.text, onChanged: (value) {
-              final options = ExpenseCategoryConfig.subcategoriesFor(value.trim());
-              if (!options.contains(_selectedCategory)) {
-                setState(() => _selectedCategory = options.first);
-              }
-            }),
+            DropdownButtonFormField<String>(
+              value: _selectedMainCategory,
+              decoration: _decoration('Main Category / Phase', Icons.account_tree_outlined),
+              items: ExpenseCategoryConfig.mainCategories
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                final options = ExpenseCategoryConfig.subcategoriesFor(value);
+                setState(() {
+                  _selectedMainCategory = value;
+                  _mainCategoryController.text = value;
+                  _selectedCategory = options.contains(_selectedCategory) ? _selectedCategory : options.first;
+                });
+              },
+              validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+            ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
               value: _selectedCategory,
@@ -192,7 +204,7 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
     }
     final log = ExpenseSalesLog(
       date: _selectedDate,
-      mainCategory: _mainCategoryController.text.trim().isEmpty ? 'Poultry' : _mainCategoryController.text.trim(),
+      mainCategory: _selectedMainCategory,
       category: _selectedCategory,
       originalCategory: _selectedCategory,
       account: _selectedAccount,

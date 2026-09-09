@@ -21,11 +21,15 @@ class CashewMigrationParser {
       final item = Map<String, dynamic>.from(rawRecord);
       final transactionId = _text(item['transactionId'] ?? item['id']);
       final date = _text(item['date'] ?? item['dateCreated']);
-      final main = _text(item['mainCategory']).isEmpty ? 'Cashew' : _text(item['mainCategory']);
+      final sourceMain = _text(item['mainCategory']);
+      final main = ExpenseCategoryConfig.normalizeImportedMainCategory(sourceMain);
       final original = _text(item['originalCategory']).isNotEmpty
           ? _text(item['originalCategory'])
           : _text(item['category']);
-      final normalized = ExpenseCategoryConfig.normalizeImportedSubcategory(main, original);
+      final normalized = ExpenseCategoryConfig.normalizeImportedSubcategory(
+        sourceMain.isEmpty ? main : sourceMain,
+        original,
+      );
       final amount = _number(item['amount']).abs();
       final quantity = _number(item['quantity']);
       final income = _bool(item['income'] ?? item['isIncome'] ?? item['transactionType']);
