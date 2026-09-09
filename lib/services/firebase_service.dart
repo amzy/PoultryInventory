@@ -5,6 +5,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../models/expense_sales_log.dart';
 import '../models/poultry_log.dart';
 import 'poultry_calculation_service.dart';
+import 'expense_category_config.dart';
+import 'cashew_migration_parser.dart';
 
 /// Firebase-only data layer for the Spark-plan architecture.
 ///
@@ -251,39 +253,32 @@ class FirebaseService {
     }
   }
 
+  /// Imports records already parsed by CashewMigrationParser. Keeping parsing
+  /// outside this data layer makes future migrations independent of Firestore.
   Future<int> importCashewRecords(List<Map<String, dynamic>> records) async {
     if (records.isEmpty) return 0;
-
-    // Imported records use the original Cashew transaction ID as the Firestore
-    // document suffix. This makes the import safe to run more than once: an
-    // already-imported Cashew transaction is skipped.
+    final parsed = CashewMigrationParser.parse({'records': records});
     final pending = <Map<String, dynamic>>[];
-    for (final item in records) {
-      final transactionId = item['transactionId']?.toString().trim() ?? '';
-      final dateText = item['date']?.toString() ?? '';
-      final category = item['originalCategory']?.toString().trim().isNotEmpty == true
-          ? item['originalCategory'].toString().trim()
-          : (item['category']?.toString() ?? '');
-      final description = item['description']?.toString() ?? '';
-      final amount = (item['amount'] as num?)?.toDouble() ?? -1;
-      final unit = item['unit']?.toString() ?? 'rupees';
-      final quantity = (item['quantity'] as num?)?.toDouble() ?? 0;
-      if (transactionId.isEmpty || dateText.isEmpty || amount < 0 || quantity < 0) continue;
-      
-      final date = DateTime.tryParse(dateText);
+    for (final item in parsed) {
+      final transactionId = item['transactionId'] as String;
+      final date = DateTime.tryParse(item['date'] as String);
       if (date == null) continue;
+      final sourceCategory = item['originalCategory'] as String;
+      final mainCategory = item['mainCategory'] as String;
+      final category = item['category'] as String;
       pending.add({
         'id': 'cashew_$transactionId',
         'record': ExpenseSalesLog(
           date: date,
-          mainCategory: item['mainCategory']?.toString().trim().isNotEmpty == true
-              ? item['mainCategory'].toString()
-              : 'Cashew',
+          mainCategory: mainCategory,
           category: category,
-          description: description.length > 500 ? description.substring(0, 500) : description,
-          amount: amount,
-          unit: unit,
-          quantity: quantity,
+          originalCategory: sourceCategory,
+          account: (item['account'] as String).trim().isEmpty ? ExpenseCategoryConfig.accounts.first : item['account'] as String,
+          description: (item['description'] as String).length > 500 ? (item['description'] as String).substring(0, 500) : item['description'] as String,
+          amount: item['amount'] as double,
+          unit: item['unit'] as String,
+          quantity: item['quantity'] as double,
+          transactionType: item['transactionType'] as String,
         ),
       });
     }
@@ -293,14 +288,10 @@ class FirebaseService {
       final end = (start + 400 < pending.length) ? start + 400 : pending.length;
       final chunk = pending.sublist(start, end);
       final existing = <String>{};
-
-      // Rules keep createdAt immutable, so we only create missing imported
-      // documents instead of overwriting them on a repeat import.
       for (final item in chunk) {
         final snap = await _expenses.doc(item['id'] as String).get();
         if (snap.exists) existing.add(item['id'] as String);
       }
-
       final batch = _db.batch();
       var batchCount = 0;
       for (final item in chunk) {

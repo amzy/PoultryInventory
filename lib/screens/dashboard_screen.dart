@@ -6,6 +6,7 @@ import '../models/expense_sales_log.dart';
 import '../providers/poultry_provider.dart';
 import '../widgets/app_shell.dart';
 import '../services/farm_config.dart';
+import '../services/expense_category_config.dart';
 import 'log_form_screen.dart';
 import 'log_detail_screen.dart';
 import 'expense_sales_form_screen.dart';
@@ -123,6 +124,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (wide) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: _eggProduction(provider)), const SizedBox(width: 14), Expanded(child: _expenseChart(provider))])
             else ...[_eggProduction(provider), const SizedBox(height: 14), _expenseChart(provider)],
             const SizedBox(height: 14),
+            _accountSummary(provider),
+            const SizedBox(height: 14),
             _expenseGroups(provider),
             const SizedBox(height: 14),
             _recentLogs(provider),
@@ -169,9 +172,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _expenseChart(PoultryProvider p) {
     final grouped = <String, List<ExpenseSalesLog>>{};
     for (final record in p.expenseRecords) {
-      final isSale = record.category == 'Egg_Sales';
+      final isSale = record.transactionType == 'credit';
       final key = isSale
-          ? 'Egg Sales'
+          ? 'Credits / Earnings'
           : (record.mainCategory.trim().isEmpty ? 'Uncategorized' : record.mainCategory.trim());
       grouped.putIfAbsent(key, () => []).add(record);
     }
@@ -245,7 +248,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showCategoryTransactions(String category, List<ExpenseSalesLog> records) {
     final sorted = [...records]..sort((a, b) => b.date.compareTo(a.date));
     final total = sorted.fold<double>(0, (sum, r) => sum + r.amount);
-    final isSale = category == 'Egg Sales';
+    final isSale = category == 'Credits / Earnings';
     showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
       title: Row(children: [Expanded(child: Text(category)), IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close))]),
       content: SizedBox(width: 520, height: 420, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -253,7 +256,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 12),
         Expanded(child: sorted.isEmpty ? const Align(alignment: Alignment.topLeft, child: Text('No transactions.')) : ListView.separated(itemCount: sorted.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, index) {
           final r = sorted[index];
-          final detail = [r.description.trim(), r.category == category ? '' : r.category, r.unit.trim().isEmpty ? '' : '${r.quantity % 1 == 0 ? r.quantity.toInt() : r.quantity} ${r.unit}'].where((x) => x.isNotEmpty).join(' • ');
+          final detail = [r.account.trim(), r.description.trim(), r.category == category ? '' : r.category, r.unit.trim().isEmpty ? '' : '${r.quantity % 1 == 0 ? r.quantity.toInt() : r.quantity} ${r.unit}'].where((x) => x.isNotEmpty).join(' • ');
           return ListTile(contentPadding: EdgeInsets.zero, leading: CircleAvatar(radius: 16, backgroundColor: isSale ? const Color(0xFFE4F7EC) : const Color(0xFFFFF3E2), child: Icon(isSale ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 16, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))), title: Text(_money(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)), subtitle: Text('${DateFormat('dd MMM yyyy').format(r.date)}${detail.isEmpty ? '' : ' • $detail'}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))));
         })),
       ])),
@@ -261,15 +264,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ));
   }
 
+  Widget _accountSummary(PoultryProvider p) {
+    final names = <String>{
+      ...ExpenseCategoryConfig.accounts,
+      ...p.expenseRecords.map((e) => e.account.trim()).where((e) => e.isNotEmpty),
+    }.toList()..sort();
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Accounts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
+          const SizedBox(height: 4),
+          const Text('Expenses and credits grouped by who paid or received the transaction.', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
+          const SizedBox(height: 12),
+          if (names.isEmpty)
+            const Text('No account transactions yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A)))
+          else
+            LayoutBuilder(builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 900 ? 2 : 1;
+              final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: names.map((name) {
+                  final records = p.expenseRecords.where((e) => e.account.trim() == name).toList();
+                  final expenses = records.where((e) => e.transactionType != 'credit').fold<double>(0, (sum, e) => sum + e.amount);
+                  final credits = records.where((e) => e.transactionType == 'credit').fold<double>(0, (sum, e) => sum + e.amount);
+                  return SizedBox(
+                    width: width,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFFF7FAF8), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFE1EAE5))),
+                      child: Row(children: [
+                        Container(width: 38, height: 38, decoration: BoxDecoration(color: const Color(0xFFE7F5EE), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.person_outline, color: Color(0xFF087A4F), size: 20)),
+                        const SizedBox(width: 10),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
+                          const SizedBox(height: 6),
+                          Row(children: [
+                            Expanded(child: Text('Expense\n${_money(expenses)}', style: const TextStyle(fontSize: 10, color: Color(0xFFB45309), fontWeight: FontWeight.w700))),
+                            Expanded(child: Text('Credit\n${_money(credits)}', style: const TextStyle(fontSize: 10, color: Color(0xFF087A4F), fontWeight: FontWeight.w700))),
+                            Expanded(child: Text('Net\n${_money(credits - expenses)}', style: const TextStyle(fontSize: 10, color: Color(0xFF52665C), fontWeight: FontWeight.w700))),
+                          ]),
+                        ])),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
   Widget _expenseGroups(PoultryProvider p) {
     final groups = <String, double>{};
-    for (final e in p.expenseRecords.where((e) => e.category != 'Egg_Sales')) {
+    for (final e in p.expenseRecords.where((e) => e.transactionType != 'credit')) {
       final key = e.mainCategory.trim().isEmpty ? 'Uncategorized' : e.mainCategory.trim();
       groups[key] = (groups[key] ?? 0) + e.amount;
     }
     final entries = groups.entries.toList()..sort((a,b) => b.value.compareTo(a.value));
     return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Expenses by Main Category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
+      const SizedBox(height: 4),
+      const Text('Phase/group totals. Detailed subcategory totals are available in Expenses.', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
       const SizedBox(height: 10),
       if (entries.isEmpty) const Text('No expense groups yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A)))
       else ...entries.take(8).map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [

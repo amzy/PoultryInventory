@@ -103,17 +103,21 @@ service cloud.firestore {
 
     function expenseShape(data) {
       return data.keys().hasOnly([
-        'date', 'dateKey', 'mainCategory', 'category', 'description',
-        'amount', 'unit', 'quantity', 'createdAt'
+        'date', 'dateKey', 'mainCategory', 'category', 'originalCategory', 'account', 'description',
+        'amount', 'unit', 'quantity', 'transactionType', 'createdAt'
       ])
       && data.date is timestamp
       && data.dateKey is string
       && data.mainCategory is string
       && data.category is string
+      && data.originalCategory is string
+      && data.account is string
       && data.description is string
       && data.amount is number
       && data.unit is string
       && data.quantity is number
+      && data.transactionType is string
+      && data.transactionType in ['expense', 'credit']
       && data.createdAt is timestamp;
     }
 
@@ -124,6 +128,8 @@ service cloud.firestore {
       && data.quantity >= 0
       && data.mainCategory.size() <= 80
       && data.category.size() <= 120
+      && data.originalCategory.size() <= 120
+      && data.account.size() <= 80
       && data.description.size() <= 500
       && data.unit.size() <= 30
       && (data.category != 'Electricity' || (data.unit == 'rupees' && data.quantity == 0))

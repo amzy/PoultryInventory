@@ -41,6 +41,28 @@ class ExpenseRecordsScreen extends StatelessWidget {
             ])),
             const SizedBox(height: 14),
             AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Expenses by Subcategory', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
+              const SizedBox(height: 5),
+              const Text('Same subcategory names are grouped across all Main Categories.', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
+              const SizedBox(height: 12),
+              ..._subcategoryGroups(records).entries.map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+                Expanded(child: Text(e.key.replaceAll('_', ' '), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                Text('₹${NumberFormat('#,##0.00').format(e.value)}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF0E9F6E))),
+              ]))),
+            ])),
+            const SizedBox(height: 14),
+            AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Expenses by Account', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
+              const SizedBox(height: 5),
+              const Text('See who paid for the transactions.', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
+              const SizedBox(height: 12),
+              ..._accountGroups(records).entries.map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+                Expanded(child: Text(e.key, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                Text('₹${NumberFormat('#,##0.00').format(e.value)}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF0E9F6E))),
+              ]))),
+            ])),
+            const SizedBox(height: 14),
+            AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('All Expense Records', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
               const SizedBox(height: 8),
               ...records.map((record) => _recordTile(context, record)),
@@ -53,6 +75,24 @@ class ExpenseRecordsScreen extends StatelessWidget {
     return PoultryAppShell(selectedIndex: 7, title: 'Expenses', subtitle: 'Manage and group expense records', child: content);
   }
 
+  Map<String, double> _subcategoryGroups(List<ExpenseSalesLog> records) {
+    final groups = <String, double>{};
+    for (final r in records.where((r) => r.category != 'Egg_Sales')) {
+      final key = r.category.trim().isEmpty ? 'Uncategorized' : r.category.trim();
+      groups[key] = (groups[key] ?? 0) + r.amount;
+    }
+    return Map.fromEntries(groups.entries.toList()..sort((a, b) => b.value.compareTo(a.value)));
+  }
+
+  Map<String, double> _accountGroups(List<ExpenseSalesLog> records) {
+    final groups = <String, double>{};
+    for (final r in records.where((r) => r.category != 'Egg_Sales')) {
+      final key = r.account.trim().isEmpty ? 'Unassigned' : r.account.trim();
+      groups[key] = (groups[key] ?? 0) + r.amount;
+    }
+    return Map.fromEntries(groups.entries.toList()..sort((a, b) => b.value.compareTo(a.value)));
+  }
+
   Widget _recordTile(BuildContext context, ExpenseSalesLog record) => Container(
     margin: const EdgeInsets.only(top: 7),
     padding: const EdgeInsets.all(10),
@@ -63,7 +103,8 @@ class ExpenseRecordsScreen extends StatelessWidget {
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(record.category.replaceAll('_', ' '), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
         const SizedBox(height: 2),
-        Text('${record.mainCategory} • ${DateFormat('dd MMM yyyy').format(record.date)}', style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))),
+        Text('${record.mainCategory} • ${record.account} • ${DateFormat('dd MMM yyyy').format(record.date)}', style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))),
+        if (record.originalCategory != record.category) Text('Original: ${record.originalCategory}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))),
         if (record.description.isNotEmpty) Text(record.description, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))),
       ])),
       Text('₹${NumberFormat('#,##0.00').format(record.amount)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
@@ -74,6 +115,7 @@ class ExpenseRecordsScreen extends StatelessWidget {
   Future<void> _edit(BuildContext context, ExpenseSalesLog record) async {
     final main = TextEditingController(text: record.mainCategory);
     final category = TextEditingController(text: record.category);
+    final account = TextEditingController(text: record.account);
     final result = await showDialog<ExpenseSalesLog>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -81,18 +123,20 @@ class ExpenseRecordsScreen extends StatelessWidget {
         content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: main, decoration: const InputDecoration(labelText: 'Main Category', hintText: 'e.g. Poultry, Cashew, Farm')),
           const SizedBox(height: 10),
-          TextField(controller: category, decoration: const InputDecoration(labelText: 'Category', hintText: 'e.g. Renovation, Tiles')),
+          TextField(controller: category, decoration: const InputDecoration(labelText: 'Subcategory', hintText: 'e.g. Feed, Labor, Materials')),
+          const SizedBox(height: 10),
+          TextField(controller: account, decoration: const InputDecoration(labelText: 'Account / Paid By')),
         ])),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           FilledButton(onPressed: () {
             if (main.text.trim().isEmpty || category.text.trim().isEmpty) return;
-            Navigator.pop(dialogContext, record.copyWith(mainCategory: main.text.trim(), category: category.text.trim()));
+            Navigator.pop(dialogContext, record.copyWith(mainCategory: main.text.trim(), category: category.text.trim(), account: account.text.trim()));
           }, child: const Text('Update')),
         ],
       ),
     );
-    main.dispose(); category.dispose();
+    main.dispose(); category.dispose(); account.dispose();
     if (result == null || !context.mounted) return;
     try {
       await context.read<PoultryProvider>().updateExpenseRecord(result);

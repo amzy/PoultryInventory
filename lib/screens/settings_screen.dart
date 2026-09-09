@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/poultry_provider.dart';
+import '../services/cashew_migration_parser.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 
@@ -37,9 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         throw const FormatException('Invalid Cashew import file.');
       }
 
-      final records = List<Map<String, dynamic>>.from(
-        (decoded['records'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
-      );
+      final records = CashewMigrationParser.parse(decoded);
 
       final imported = await context.read<PoultryProvider>().importCashewRecords(records);
       if (!mounted) return;
@@ -68,7 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Text('Data Import', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
               const SizedBox(height: 5),
               const Text(
-                'Import old financial records exported from the Cashew app.',
+                'Import a future Cashew migration using the stable JSON migration format.',
                 style: TextStyle(fontSize: 11, color: Color(0xFF75867D)),
               ),
               const SizedBox(height: 16),

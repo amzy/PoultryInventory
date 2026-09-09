@@ -65,8 +65,9 @@ class PoultryProvider with ChangeNotifier {
   double get totalFeedKg=>_logs.fold(0.0,(s,e)=>s+e.feedConsumed);
   double get totalEggs=>_logs.fold(0.0,(s,e)=>s+e.totalEggs);
   double get totalTrays=>_logs.fold(0.0,(s,e)=>s+e.trays);
-  double get totalExpenses=>_expenseRecords.where((e)=>e.category!='Egg_Sales').fold(0.0,(s,e)=>s+e.amount);
-  double get totalEggSales=>_expenseRecords.where((e)=>e.category=='Egg_Sales').fold(0.0,(s,e)=>s+e.amount);
-  double get netExpense=>totalExpenses-totalEggSales;
+  double get totalExpenses=>_expenseRecords.where((e)=>e.transactionType!='credit').fold(0.0,(s,e)=>s+e.amount);
+  double get totalCredits=>_expenseRecords.where((e)=>e.transactionType=='credit').fold(0.0,(s,e)=>s+e.amount);
+  double get totalEggSales=>_expenseRecords.where((e)=>e.category=='Egg_Sales' || e.transactionType=='credit').fold(0.0,(s,e)=>s+e.amount);
+  double get netExpense=>totalExpenses-totalCredits;
   double get averageFcr {final x=_logs.map((e)=>e.automatedFCR).where((e)=>e>0).toList();return x.isEmpty?0:x.reduce((a,b)=>a+b)/x.length;}
 }

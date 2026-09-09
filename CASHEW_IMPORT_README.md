@@ -1,9 +1,26 @@
-# Cashew legacy import
+# Cashew import
 
-The app can import a converted Cashew JSON export from **Settings → Import Cashew Data**.
+The Cashew importer preserves the original hierarchy and payer account.
 
-The supplied conversion contains 96 Cashew transactions and maps them to the Poultry Inventory expense categories. The original Cashew category and note are preserved in each imported description.
+## Imported transaction fields
 
-The importer uses the original Cashew transaction ID as the Firestore document suffix, so running the same import again skips records that were already imported.
+- Main Category = Cashew main category/phase (for example Layer Bird, Chiks, Renovation, Augar Work)
+- Subcategory = normalized editable subcategory
+- Original Category = original Cashew subcategory, retained for audit/history
+- Account = Cashew wallet/account (Amzad Khan or Sarfaraj Khan)
 
-The original Cashew SQLite export is not bundled in the app because the repository is public.
+## Requested mappings
+
+- Layer Feed -> Feed
+- Stone -> Grit
+- Health -> Medical
+- Dr Fee -> Medical
+- Healthcare -> Medical
+- Vaccine -> Vaccine
+- Construction Labor -> Labor
+- Steel Labor -> Labor
+- Labor work -> Labor
+- Construction Materials -> Materials
+- Material -> Material
+
+The same subcategory name is allowed under multiple main categories. This lets reports group all Feed, Vaccine, Labor, etc. transactions while preserving the phase/main-category path.
