@@ -20,6 +20,7 @@ let package = Package(
         .package(name: "firebase_auth", path: "../.packages/firebase_auth-6.6.1"),
         .package(name: "firebase_core", path: "../.packages/firebase_core-4.14.0"),
         .package(name: "google_sign_in_ios", path: "../.packages/google_sign_in_ios-6.3.3"),
+        .package(name: "sqlite3_flutter_libs", path: "../.packages/sqlite3_flutter_libs-0.5.42"),
         .package(name: "FlutterFramework", path: "../.packages/FlutterFramework")
     ],
     targets: [
@@ -31,6 +32,7 @@ let package = Package(
                 .product(name: "firebase-auth", package: "firebase_auth"),
                 .product(name: "firebase-core", package: "firebase_core"),
                 .product(name: "google-sign-in-ios", package: "google_sign_in_ios"),
+                .product(name: "sqlite3-flutter-libs", package: "sqlite3_flutter_libs"),
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ]
         )

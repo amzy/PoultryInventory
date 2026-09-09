@@ -33,7 +33,6 @@ class LogDetailScreen extends StatelessWidget {
           const SizedBox(height: 14),
           _section('Flock', Icons.pets, [
             _value('Date', DateFormat('dd MMM yyyy').format(log.date)),
-            _value('Flock Age', '${log.flockAge} days'),
             _value('Starting Birds', '${log.startingBirds}'),
             _value('Mortality', '${log.mortality}'),
             _value('Ending Birds', '${log.endingBirds}'),

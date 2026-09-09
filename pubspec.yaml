@@ -39,6 +39,9 @@ dependencies:
   provider: ^6.1.5+1
   excel: ^4.0.6
   file_picker: ^8.1.7
+  sqlite3: ^2.9.4
+  sqlite3_flutter_libs: ^0.5.42
+  typed_data: ^1.4.0
 
 dev_dependencies:
   flutter_test:

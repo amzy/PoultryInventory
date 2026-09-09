@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/poultry_provider.dart';
-import '../services/cashew_migration_parser.dart';
+import '../services/cashew_sqlite_importer.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 
@@ -25,30 +23,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['json'],
+      allowedExtensions: ['sql', 'db', 'sqlite', 'sqlite3'],
       withData: true,
     );
-    if (result == null || result.files.single.bytes == null) return;
+    final bytes = result?.files.single.bytes;
+    if (bytes == null || bytes.isEmpty) return;
 
     setState(() => _importing = true);
     try {
-      final bytes = result.files.single.bytes!;
-      final decoded = jsonDecode(utf8.decode(bytes));
-      if (decoded is! Map<String, dynamic> || decoded['records'] is! List) {
-        throw const FormatException('Invalid Cashew import file.');
-      }
-
-      final records = CashewMigrationParser.parse(decoded);
-
-      final imported = await context.read<PoultryProvider>().importCashewRecords(records);
+      // Cashew's .sql export is a SQLite database, not a text SQL script.
+      // Parse the original database directly; no intermediate JSON is used.
+      final records = await parseCashewSqliteBytes(bytes);
+      final result = await context.read<PoultryProvider>().importCashewRecords(records);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$imported Cashew records imported. Existing imported records were skipped.')),
+        SnackBar(
+          content: Text(
+            'Cashew sync complete: ${result.imported} imported, '
+            '${result.updated} updated, ${result.unchanged} unchanged.',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cashew import failed: $e')),
+        SnackBar(content: Text('Cashew SQLite import failed: $e')),
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -67,7 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Text('Data Import', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
               const SizedBox(height: 5),
               const Text(
-                'Import a future Cashew migration using the stable JSON migration format.',
+                'Import the original Cashew SQLite export directly. Existing imported transactions are updated to the latest category, account, amount and transaction rules.',
                 style: TextStyle(fontSize: 11, color: Color(0xFF75867D)),
               ),
               const SizedBox(height: 16),
@@ -85,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Cashew expenses keep their original Cashew category. They are imported under Main Category = Cashew so you can manually change the Main Category or Category later. Egg sales and poultry daily logs are not created from this file.',
+                        'The selected .sql file is the original Cashew SQLite database. Category mappings are applied during import, and existing Cashew transactions are updated instead of skipped when the new rules produce different values. Egg sales and poultry Daily Logs are not created from this file.',
                         style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157)),
                       ),
                     ),
@@ -106,7 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: _importing
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.upload_file_outlined),
-                  label: Text(_importing ? 'Importing…' : 'Import Cashew Data'),
+                  label: Text(_importing ? 'Importing…' : 'Sync Cashew SQLite Data'),
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF0E9F6E),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),

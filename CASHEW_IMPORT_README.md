@@ -1,26 +1,54 @@
-# Cashew import
+# Cashew SQLite Import
 
-The Cashew importer preserves the original hierarchy and payer account.
+The Settings screen imports the original Cashew export directly. Cashew files commonly use a `.sql` extension even though the file is a SQLite 3 database.
 
-## Imported transaction fields
+## Supported files
 
-- Main Category = Cashew main category/phase (for example Layer Bird, Chiks, Renovation, Augar Work)
-- Subcategory = normalized editable subcategory
-- Original Category = original Cashew subcategory, retained for audit/history
-- Account = Cashew wallet/account (Amzad Khan or Sarfaraj Khan)
+- `.sql`
+- `.db`
+- `.sqlite`
+- `.sqlite3`
 
-## Requested mappings
+No JSON conversion is required.
 
-- Layer Feed -> Feed
-- Stone -> Grit
-- Health -> Medical
-- Dr Fee -> Medical
-- Healthcare -> Medical
-- Vaccine -> Vaccine
-- Construction Labor -> Labor
-- Steel Labor -> Labor
-- Labor work -> Labor
-- Construction Materials -> Materials
-- Material -> Material
+## Import behavior
 
-The same subcategory name is allowed under multiple main categories. This lets reports group all Feed, Vaccine, Labor, etc. transactions while preserving the phase/main-category path.
+Each Cashew transaction gets a deterministic Firestore ID:
+
+`cashew_<transactionId>`
+
+The import is an **upsert/sync**, not a skip-only migration:
+
+- New transaction → imported.
+- Existing transaction with identical current values → unchanged.
+- Existing transaction whose category, account, amount, description, date, unit, quantity, or expense/credit type differs → updated to the current SQLite source and current app mapping rules.
+
+This means importing the same SQLite export again is safe and also repairs older imported transactions that used the previous category mapping.
+
+## Category mappings
+
+The existing explicit mappings remain centralized in `expense_category_config.dart`:
+
+- Layer Feed → Feed
+- Stone → Grit
+- Health → Medical
+- Dr Fee → Medical
+- Healthcare → Medical
+- Vaccine → Vaccine
+- Construction Labor → Labor
+- Construction Materials → Materials
+- Steel Labor → Labor
+- Material → Material
+- Labor work → Labor
+
+Unknown categories are preserved rather than guessed.
+
+## Web build requirement
+
+The SQLite WASM runtime must exist at `web/sqlite3.wasm` for browser imports. Run:
+
+```bash
+./scripts/setup_sqlite_web.sh
+```
+
+before building the web app. The script downloads the matching SQLite WASM build for `sqlite3 2.9.x`.

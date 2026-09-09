@@ -14,6 +14,16 @@ import 'cashew_migration_parser.dart';
 /// enforce ownership, field shape, non-negative values, and calculated-field
 /// invariants. Daily-log documents use deterministic date IDs so duplicates
 /// are impossible at the document level.
+class CashewImportResult {
+  final int imported;
+  final int updated;
+  final int unchanged;
+
+  const CashewImportResult({this.imported = 0, this.updated = 0, this.unchanged = 0});
+
+  int get total => imported + updated + unchanged;
+}
+
 class FirebaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -253,59 +263,82 @@ class FirebaseService {
     }
   }
 
-  /// Imports records already parsed by CashewMigrationParser. Keeping parsing
-  /// outside this data layer makes future migrations independent of Firestore.
-  Future<int> importCashewRecords(List<Map<String, dynamic>> records) async {
-    if (records.isEmpty) return 0;
-    final parsed = CashewMigrationParser.parse({'records': records});
-    final pending = <Map<String, dynamic>>[];
-    for (final item in parsed) {
-      final transactionId = item['transactionId'] as String;
-      final date = DateTime.tryParse(item['date'] as String);
-      if (date == null) continue;
-      final sourceCategory = item['originalCategory'] as String;
-      final mainCategory = item['mainCategory'] as String;
-      final category = item['category'] as String;
-      pending.add({
-        'id': 'cashew_$transactionId',
-        'record': ExpenseSalesLog(
+  /// Imports Cashew records using deterministic IDs derived from the source
+  /// transaction ID. Existing Cashew records are deliberately updated rather
+  /// than skipped so category/account/amount/type changes in the latest
+  /// SQLite export repair old imports to the current app rules.
+  Future<CashewImportResult> importCashewRecords(List<Map<String, dynamic>> records) async {
+    if (records.isEmpty) return const CashewImportResult();
+    final parsed = CashewMigrationParser.parseRecords(records);
+    var imported = 0;
+    var updated = 0;
+    var unchanged = 0;
+
+    for (var start = 0; start < parsed.length; start += 400) {
+      final end = (start + 400 < parsed.length) ? start + 400 : parsed.length;
+      final chunk = parsed.sublist(start, end);
+      final batch = _db.batch();
+      var writes = 0;
+
+      for (final item in chunk) {
+        final transactionId = item['transactionId'] as String;
+        final date = DateTime.tryParse(item['date'] as String);
+        if (date == null) continue;
+
+        final id = 'cashew_$transactionId';
+        final record = ExpenseSalesLog(
+          id: id,
           date: date,
-          mainCategory: mainCategory,
-          category: category,
-          originalCategory: sourceCategory,
-          account: (item['account'] as String).trim().isEmpty ? ExpenseCategoryConfig.accounts.first : item['account'] as String,
-          description: (item['description'] as String).length > 500 ? (item['description'] as String).substring(0, 500) : item['description'] as String,
+          mainCategory: item['mainCategory'] as String,
+          category: item['category'] as String,
+          originalCategory: item['originalCategory'] as String,
+          account: item['account'] as String,
+          description: (item['description'] as String).length > 500
+              ? (item['description'] as String).substring(0, 500)
+              : item['description'] as String,
           amount: item['amount'] as double,
           unit: item['unit'] as String,
           quantity: item['quantity'] as double,
           transactionType: item['transactionType'] as String,
-        ),
-      });
+        );
+
+        final ref = _expenses.doc(id);
+        final snap = await ref.get();
+        if (!snap.exists) {
+          batch.set(ref, record.toFirestore());
+          imported++;
+          writes++;
+          continue;
+        }
+
+        final existing = ExpenseSalesLog.fromFirestore(snap.data()!, id: id);
+        final changed = existing.date != record.date ||
+            existing.mainCategory != record.mainCategory ||
+            existing.category != record.category ||
+            existing.originalCategory != record.originalCategory ||
+            existing.account != record.account ||
+            existing.description != record.description ||
+            existing.amount != record.amount ||
+            existing.unit != record.unit ||
+            existing.quantity != record.quantity ||
+            existing.transactionType != record.transactionType;
+
+        if (!changed) {
+          unchanged++;
+          continue;
+        }
+
+        final data = record.toFirestore(includeCreatedAt: false);
+        data['createdAt'] = snap.data()?['createdAt'];
+        batch.set(ref, data);
+        updated++;
+        writes++;
+      }
+
+      if (writes > 0) await batch.commit();
     }
 
-    var imported = 0;
-    for (var start = 0; start < pending.length; start += 400) {
-      final end = (start + 400 < pending.length) ? start + 400 : pending.length;
-      final chunk = pending.sublist(start, end);
-      final existing = <String>{};
-      for (final item in chunk) {
-        final snap = await _expenses.doc(item['id'] as String).get();
-        if (snap.exists) existing.add(item['id'] as String);
-      }
-      final batch = _db.batch();
-      var batchCount = 0;
-      for (final item in chunk) {
-        final id = item['id'] as String;
-        if (existing.contains(id)) continue;
-        batch.set(_expenses.doc(id), (item['record'] as ExpenseSalesLog).toFirestore());
-        batchCount++;
-      }
-      if (batchCount > 0) {
-        await batch.commit();
-        imported += batchCount;
-      }
-    }
-    return imported;
+    return CashewImportResult(imported: imported, updated: updated, unchanged: unchanged);
   }
 
   Future<void> updateExpenseRecord(ExpenseSalesLog record) async {

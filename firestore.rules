@@ -9,7 +9,7 @@ service cloud.firestore {
 
     function dailyLogShape(data) {
       return data.keys().hasOnly([
-        'date', 'dateKey', 'flockAge', 'startingBirds', 'mortality',
+        'date', 'dateKey', 'startingBirds', 'mortality',
         'endingBirds', 'trays', 'totalEggs', 'avgTrayWeight',
         'feedConsumed', 'stoneGritConsumed', 'waterIntake',
         'automatedFCR', 'layingPercentage', 'previousDateKey',
@@ -17,7 +17,6 @@ service cloud.firestore {
       ])
       && data.date is timestamp
       && data.dateKey is string
-      && data.flockAge is int
       && data.startingBirds is int
       && data.mortality is int
       && data.endingBirds is int
@@ -36,7 +35,6 @@ service cloud.firestore {
 
     function dailyLogValues(data) {
       return data.dateKey >= '2026-04-27'
-      && data.flockAge >= 0
       && data.startingBirds >= 0
       && data.mortality >= 0
       && data.mortality <= data.startingBirds

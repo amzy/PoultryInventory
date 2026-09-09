@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/poultry_log.dart';
 import '../providers/poultry_provider.dart';
-import '../services/farm_config.dart';
 import '../widgets/app_shell.dart';
 
 class LogFormScreen extends StatefulWidget {
@@ -49,7 +48,6 @@ class _LogFormScreenState extends State<LogFormScreen> {
   }
   @override void dispose() { for(final c in [_mortalityController,_traysController,_feedConsumedController]) c.removeListener(_refreshPreview); for(final c in [_mortalityController,_traysController,_avgTrayWeightController,_feedConsumedController,_stoneGritConsumedController,_waterIntakeController]) c.dispose(); super.dispose(); }
   void _refreshPreview() { if(mounted) setState(() {}); }
-  int get _age => FarmConfig.flockAgeOn(_selectedDate);
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +86,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
     }
   }
 
-  Widget _dateHeader(bool wide) => AppCard(child: wide ? Row(children: [Expanded(child: _datePickerTile()), const SizedBox(width: 14), _ageCard()]) : Column(children: [_datePickerTile(), const SizedBox(height: 10), _ageCard()]));
+  Widget _dateHeader(bool wide) => AppCard(child: _datePickerTile());
 
   Widget _datePickerTile() => InkWell(
     onTap: _pickDate,
@@ -128,30 +126,6 @@ class _LogFormScreenState extends State<LogFormScreen> {
           const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF52675D)),
         ],
       ),
-    ),
-  );
-
-  Widget _ageCard() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-    decoration: BoxDecoration(color: const Color(0xFFE7F6EC), borderRadius: BorderRadius.circular(12)),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(color: Colors.white.withOpacity(.7), borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.pets_outlined, color: Color(0xFF0E9F6E)),
-        ),
-        const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Flock Age', style: TextStyle(fontSize: 10, color: Color(0xFF557263))),
-            Text('$_age Days', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0B5B3E))),
-          ],
-        ),
-      ],
     ),
   );
 
@@ -273,7 +247,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
     // Starting birds and all calculated fields are intentionally hidden from the form.
     // FirebaseService/PoultryCalculationService derives starting birds from the previous
     // log or the 5200 opening flock when this is the first log.
-    final log = PoultryLog(date: normalized, flockAge: _age, startingBirds: 0, mortality: mortality, endingBirds: 0, trays: trays, totalEggs: 0, avgTrayWeight: avgWeight, feedConsumed: feed, stoneGritConsumed: grit, waterIntake: water, automatedFCR: 0, layingPercentage: 0);
+    final log = PoultryLog(date: normalized, startingBirds: 0, mortality: mortality, endingBirds: 0, trays: trays, totalEggs: 0, avgTrayWeight: avgWeight, feedConsumed: feed, stoneGritConsumed: grit, waterIntake: water, automatedFCR: 0, layingPercentage: 0);
     try {
       if (editing) { await provider.updateLog(log); } else { await provider.addLog(log); }
       if (mounted) Navigator.pop(context, true);

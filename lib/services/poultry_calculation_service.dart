@@ -25,7 +25,6 @@ class PoultryCalculationService {
     final laying = ending > 0 ? (eggs / ending) * 100 : 0.0;
 
     return input.copyWith(
-      flockAge: FarmConfig.flockAgeOn(input.date),
       startingBirds: starting,
       endingBirds: ending,
       totalEggs: eggs,
