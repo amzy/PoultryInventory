@@ -48,6 +48,7 @@ class CashewMigrationParser {
         'quantity': quantity,
         'income': income,
         'transactionType': income ? 'credit' : 'expense',
+        if (_text(item['source']).isNotEmpty) 'source': _text(item['source']),
       };
     }).where((r) =>
         (r['transactionId'] as String).isNotEmpty &&

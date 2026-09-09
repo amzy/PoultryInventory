@@ -42,7 +42,7 @@ class ExpenseCategoryConfig {
   /// Layer Bird -> Electricity in the new model.
   static String normalizeImportedMainCategory(String source) {
     final value = source.trim();
-    switch (value.toLowerCase()) {
+    switch (_categoryKey(value)) {
       case 'layer bird':
         return 'Layer Bird';
       case 'chiks':
@@ -65,9 +65,13 @@ class ExpenseCategoryConfig {
   static String normalizeImportedSubcategory(String mainCategory, String source) {
     final value = source.trim();
     final main = mainCategory.trim();
-    final lower = value.toLowerCase();
+    final lower = _categoryKey(value);
+    final mainKey = _categoryKey(main);
 
-    if (main.toLowerCase() == 'electricity' && value.isEmpty) {
+    // Cashew category labels can contain presentation emojis, for example
+    // "Water 💦". They are not part of the financial category name and must
+    // never make an otherwise valid category fail validation.
+    if (mainKey == 'electricity' && lower.isEmpty) {
       return 'Electricity';
     }
 
@@ -97,14 +101,30 @@ class ExpenseCategoryConfig {
     // A top-level Cashew category can also appear as the subcategory when the
     // source transaction has no separate subcategory. Preserve that fact in
     // originalCategory and use the neutral current bucket.
-    if (value.isEmpty || value.toLowerCase() == main.toLowerCase()) {
+    if (lower.isEmpty || lower == mainKey) {
       return 'Other Expenses';
     }
 
-    if (subcategoriesFor(main).contains(value)) return value;
+    // Match against the current configured names after removing presentation
+    // characters. This handles values such as "Water 💦", "Feed 🌾", etc.
+    // while returning the exact canonical name used by Firestore rules/UI.
+    for (final configured in subcategoriesFor(main)) {
+      if (_categoryKey(configured) == lower) return configured;
+    }
 
     throw FormatException(
       'Unsupported Cashew subcategory "$value" for main category "$main".',
     );
+  }
+
+  /// Converts a Cashew category label to a comparison key. Cashew exports may
+  /// include emojis or decorative punctuation in category names; the current
+  /// financial model deliberately stores only the canonical text label.
+  static String _categoryKey(String value) {
+    return value
+        .replaceAll(RegExp(r'[^A-Za-z0-9]+'), ' ')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .toLowerCase();
   }
 }

@@ -304,7 +304,17 @@ class FirebaseService {
         final date = DateTime.tryParse(item['date'] as String);
         if (date == null) continue;
 
-        final id = 'cashew_$transactionId';
+        final source = item['source']?.toString() ?? '';
+        // App-generated SQL exports contain the original Firestore document ID,
+        // so re-importing an app export updates the same record instead of
+        // creating cashew_cashew_* duplicates. External Cashew records remain
+        // namespaced under cashew_.
+        final id = source == 'poultry_inventory_export'
+            ? transactionId
+            : (transactionId.startsWith('cashew_') ? transactionId : 'cashew_$transactionId');
+        if (id.trim().isEmpty) {
+          throw StateError('Cashew/app export contains a transaction without an ID.');
+        }
         final mainCategory = item['mainCategory'] as String;
         final category = item['category'] as String;
         if (!ExpenseCategoryConfig.isValidMainCategory(mainCategory) ||

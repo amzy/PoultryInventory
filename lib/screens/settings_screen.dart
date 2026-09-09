@@ -1,9 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/poultry_provider.dart';
 import '../services/cashew_sqlite_importer.dart';
+import '../services/app_sql_export.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 
@@ -57,6 +61,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _exportFinancialSql() async {
+    if (_importing) return;
+    final records = context.read<PoultryProvider>().expenseRecords;
+    setState(() => _importing = true);
+    try {
+      final sql = AppSqlExport.buildExpenseSql(records);
+      final bytes = Uint8List.fromList(utf8.encode(sql));
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Export Poultry Inventory financial data',
+        fileName: 'poultry_inventory_financial_export.sql',
+        type: FileType.custom,
+        allowedExtensions: ['sql'],
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (savedPath == null || savedPath.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SQL export cancelled.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('SQL export saved: $savedPath')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('SQL export failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   Future<void> _importCashewData() async {
     if (_importing) return;
 
@@ -70,15 +108,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _importing = true);
     try {
-      // Cashew's .sql export is a SQLite database, not a text SQL script.
-      // Parse the original database directly; no intermediate JSON is used.
+      // Accept both the original Cashew SQLite database and a SQL file exported by this app.
       final records = await parseCashewSqliteBytes(bytes);
       final result = await context.read<PoultryProvider>().importCashewRecords(records);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Cashew sync complete: ${result.imported} imported, '
+            'Data sync complete: ${result.imported} imported, '
             '${result.updated} updated, ${result.unchanged} unchanged.',
           ),
         ),
@@ -86,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cashew SQLite import failed: $e')),
+        SnackBar(content: Text('Data import failed: $e')),
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -102,10 +139,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Data Import', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
+              const Text('Data Backup & Sync', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
               const SizedBox(height: 5),
               const Text(
-                'First clear the old imported records, then import the original Cashew SQLite export. Sync uses deterministic IDs so the same source can be imported again safely.',
+                'Export the current financial records as portable SQL, or import either a Cashew SQLite export or SQL previously exported by this app. Sync uses deterministic IDs so the same source can be imported again safely.',
                 style: TextStyle(fontSize: 11, color: Color(0xFF75867D)),
               ),
               const SizedBox(height: 16),
@@ -123,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'The SQLite import is validated against the four current financial main categories. Electricity is mapped to Layer Bird → Electricity, and source transactions without a specific subcategory use Other Expenses. Accounts are preserved. Daily Logs are never created by this import.',
+                        'The import is validated against the four current financial main categories. Electricity is mapped to Layer Bird → Electricity, and source transactions without a specific subcategory use Other Expenses. Accounts are preserved. Daily Logs are never created by this import.',
                         style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157)),
                       ),
                     ),
@@ -131,6 +168,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              SizedBox(
+                height: 42,
+                child: OutlinedButton.icon(
+                  onPressed: _importing ? null : _exportFinancialSql,
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Export Financial Data as SQL'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0E9F6E),
+                    side: const BorderSide(color: Color(0xFFBFD8CA)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseRecordsScreen())),
                 icon: const Icon(Icons.account_tree_outlined),

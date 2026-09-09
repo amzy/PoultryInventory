@@ -72,6 +72,34 @@ void main() {
     expect(records.single['originalCategory'], 'Augar Work');
   });
 
+  test('normalizes Cashew subcategory emojis to canonical names', () {
+    final records = CashewMigrationParser.parse({
+      'records': [
+        {
+          'transactionId': 'water-emoji',
+          'date': '2026-02-03',
+          'mainCategory': 'Chiks 🐥',
+          'category': 'Water 💦',
+          'amount': 125,
+          'account': 'Amzad Khan',
+        },
+        {
+          'transactionId': 'feed-emoji',
+          'date': '2026-02-04',
+          'mainCategory': 'Layer Bird',
+          'category': 'Feed 🌾',
+          'amount': 250,
+          'account': 'Sarfaraj Khan',
+        },
+      ],
+    });
+
+    expect(records[0]['category'], 'Water');
+    expect(records[0]['originalCategory'], 'Water 💦');
+    expect(records[1]['category'], 'Feed');
+    expect(records[1]['originalCategory'], 'Feed 🌾');
+  });
+
   test('maps income to credit and preserves account', () {
     final records = CashewMigrationParser.parse({
       'records': [
