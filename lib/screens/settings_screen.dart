@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../providers/poultry_provider.dart';
 import '../services/cashew_sqlite_importer.dart';
 import '../services/app_sql_export.dart';
+import '../services/sql_file_saver.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 
@@ -21,6 +22,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _importing = false;
+  String _importStatus = '';
 
   Future<void> _deleteImportedCashewData() async {
     if (_importing) return;
@@ -57,7 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(content: Text('Unable to delete old Cashew data: $e')),
       );
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) setState(() { _importing = false; _importStatus = ''; });
     }
   }
 
@@ -68,12 +70,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final sql = AppSqlExport.buildExpenseSql(records);
       final bytes = Uint8List.fromList(utf8.encode(sql));
-      final savedPath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Export Poultry Inventory financial data',
-        fileName: 'poultry_inventory_financial_export.sql',
-        type: FileType.custom,
-        allowedExtensions: ['sql'],
-        bytes: bytes,
+      final savedPath = await saveSqlFile(
+        bytes,
+        'poultry_inventory_financial_export.sql',
       );
       if (!mounted) return;
       if (savedPath == null || savedPath.isEmpty) {
@@ -91,7 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(content: Text('SQL export failed: $e')),
       );
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) setState(() { _importing = false; _importStatus = ''; });
     }
   }
 
@@ -106,11 +105,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final bytes = result?.files.single.bytes;
     if (bytes == null || bytes.isEmpty) return;
 
-    setState(() => _importing = true);
+    setState(() { _importing = true; _importStatus = 'Reading import file…'; });
     try {
       // Accept both the original Cashew SQLite database and a SQL file exported by this app.
       final records = await parseCashewSqliteBytes(bytes);
-      final result = await context.read<PoultryProvider>().importCashewRecords(records);
+      final result = await context.read<PoultryProvider>().importCashewRecords(
+        records,
+        onProgress: (message) {
+          if (mounted) setState(() => _importStatus = message);
+        },
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -126,7 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(content: Text('Data import failed: $e')),
       );
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) setState(() { _importing = false; _importStatus = ''; });
     }
   }
 
@@ -195,7 +199,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: _importing
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.upload_file_outlined),
-                  label: Text(_importing ? 'Importing…' : 'Sync Cashew SQLite Data'),
+                  label: Text(_importing ? (_importStatus.isEmpty ? 'Importing…' : _importStatus) : 'Sync Cashew SQLite Data'),
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF0E9F6E),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
@@ -225,7 +229,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (widget.embedded) return content;
     return PoultryAppShell(
-      selectedIndex: 7,
+      selectedIndex: 8,
       title: 'Settings',
       subtitle: 'App preferences and data tools',
       child: content,

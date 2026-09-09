@@ -14,6 +14,17 @@ class ExpenseSalesLog {
   final String account;
   final String description;
   final double amount;
+  /// Unit price before freight for material purchases.
+  final double unitPrice;
+  /// Freight/transport charge added to the material purchase total.
+  final double freightCharge;
+  /// True when the amount is calculated from quantity, unit price and freight.
+  final bool pricingCalculated;
+  /// Line items used by Medical expenses. Each item contains name, price and quantity.
+  final List<Map<String, dynamic>> medicalItems;
+
+  /// Net amount payable/received, including freight.
+  double get netTotal => amount + freightCharge;
   final String unit;
   final double quantity;
   /// 'expense' or 'credit'. Credits are income/received transactions.
@@ -28,6 +39,10 @@ class ExpenseSalesLog {
     this.account = 'Amzad Khan',
     required this.description,
     required this.amount,
+    this.unitPrice = 0,
+    this.freightCharge = 0,
+    this.pricingCalculated = false,
+    this.medicalItems = const [],
     required this.unit,
     required this.quantity,
     String? transactionType,
@@ -54,6 +69,10 @@ class ExpenseSalesLog {
           : 'Amzad Khan',
       description: data['description']?.toString() ?? '',
       amount: d(data['amount']),
+      unitPrice: d(data['unitPrice']),
+      freightCharge: d(data['freightCharge']),
+      pricingCalculated: data['pricingCalculated'] == true,
+      medicalItems: ((data['medicalItems'] as List?) ?? const []).map((item) => Map<String, dynamic>.from(item as Map)).toList(),
       unit: data['unit']?.toString() ?? '',
       quantity: d(data['quantity']),
       transactionType: data['transactionType']?.toString().trim().isNotEmpty == true
@@ -71,6 +90,10 @@ class ExpenseSalesLog {
     'account': account.trim().isEmpty ? 'Amzad Khan' : account.trim(),
     'description': description,
     'amount': amount,
+    'unitPrice': unitPrice,
+    'freightCharge': freightCharge,
+    'pricingCalculated': pricingCalculated,
+    if (medicalItems.isNotEmpty) 'medicalItems': medicalItems,
     'unit': unit,
     'quantity': quantity,
     'transactionType': transactionType,
@@ -86,6 +109,10 @@ class ExpenseSalesLog {
     String? account,
     String? description,
     double? amount,
+    double? unitPrice,
+    double? freightCharge,
+    bool? pricingCalculated,
+    List<Map<String, dynamic>>? medicalItems,
     String? unit,
     double? quantity,
     String? transactionType,
@@ -98,6 +125,10 @@ class ExpenseSalesLog {
     account: account ?? this.account,
     description: description ?? this.description,
     amount: amount ?? this.amount,
+    unitPrice: unitPrice ?? this.unitPrice,
+    freightCharge: freightCharge ?? this.freightCharge,
+    pricingCalculated: pricingCalculated ?? this.pricingCalculated,
+    medicalItems: medicalItems ?? this.medicalItems,
     unit: unit ?? this.unit,
     quantity: quantity ?? this.quantity,
     transactionType: transactionType ?? this.transactionType,
@@ -111,6 +142,10 @@ class ExpenseSalesLog {
     account,
     description,
     amount,
+    unitPrice,
+    freightCharge,
+    pricingCalculated,
+    medicalItems,
     unit,
     quantity,
     transactionType,

@@ -102,7 +102,7 @@ service cloud.firestore {
     function expenseShape(data) {
       return data.keys().hasOnly([
         'date', 'dateKey', 'mainCategory', 'category', 'originalCategory', 'account', 'description',
-        'amount', 'unit', 'quantity', 'transactionType', 'createdAt'
+        'amount', 'unitPrice', 'freightCharge', 'pricingCalculated', 'medicalItems', 'unit', 'quantity', 'transactionType', 'createdAt'
       ])
       && data.date is timestamp
       && data.dateKey is string
@@ -112,6 +112,10 @@ service cloud.firestore {
       && data.account is string
       && data.description is string
       && data.amount is number
+      && data.unitPrice is number
+      && data.freightCharge is number
+      && data.pricingCalculated is bool
+      && (!data.keys().hasAll(['medicalItems']) || data.medicalItems is list)
       && data.unit is string
       && data.quantity is number
       && data.transactionType is string
@@ -139,7 +143,10 @@ service cloud.firestore {
       && data.category.size() > 0
       && expenseCategoryValid(data)
       && data.amount >= 0
+      && data.unitPrice >= 0
+      && data.freightCharge >= 0
       && data.quantity >= 0
+      && (!data.pricingCalculated || (data.category in ['Feed', 'Grit', 'Tray'] && data.amount >= data.quantity * data.unitPrice - 0.01 && data.amount <= data.quantity * data.unitPrice + 0.01))
       && data.mainCategory.size() <= 80
       && data.category.size() <= 120
       && data.originalCategory.size() <= 120

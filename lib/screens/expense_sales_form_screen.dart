@@ -24,8 +24,13 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
   final _mainCategoryController = TextEditingController(text: 'Layer Bird');
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
+  final _unitPriceController = TextEditingController();
+  final _freightController = TextEditingController(text: '0');
   final _unitController = TextEditingController();
   final _quantityController = TextEditingController();
+  bool _amountAutoCalculated = false;
+
+  final List<_MedicalItemDraft> _medicalItems = [];
 
   @override
   void initState() {
@@ -77,8 +82,13 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
               onChanged: (v) => setState(() {
                 _selectedCategory = v ?? _subcategories.first;
                 _descriptionController.clear();
+                _unitPriceController.clear();
+                _freightController.text = '0';
+                _amountController.clear();
                 _unitController.clear();
                 _quantityController.clear();
+                _amountAutoCalculated = false;
+                _clearMedicalItems();
               }),
               validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
             ),
@@ -122,11 +132,12 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
       case 'Grit':
         return 4;
       case 'Electricity':
-      case 'Tray':
       case 'Other_Expenses':
         return 5;
-      case 'Egg_Sales':
+      case 'Tray':
         return 6;
+      case 'Egg_Sales':
+        return 7;
       default:
         return 3;
     }
@@ -139,19 +150,103 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
 
   InputDecoration _decoration(String label, IconData icon) => InputDecoration(labelText: label, labelStyle: const TextStyle(color: Color(0xFF708178), fontSize: 12), prefixIcon: Icon(icon, color: const Color(0xFF0E9F6E), size: 19), filled: true, fillColor: const Color(0xFFF9FBFA), border: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: Color(0xFFDCE7E0))), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: Color(0xFFDCE7E0))), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: Color(0xFF0E9F6E), width: 1.4)));
 
+  bool get _usesMaterialPricing => const {'Feed', 'Grit', 'Tray'}.contains(_selectedCategory);
+
+  bool get _isMedical => _selectedCategory == 'Medical';
+
+  double get _medicalTotal => _medicalItems.fold(0.0, (sum, item) => sum + item.total);
+
+  void _clearMedicalItems() {
+    for (final item in _medicalItems) {
+      item.dispose();
+    }
+    _medicalItems.clear();
+  }
+
+  void _addMedicalItem() {
+    setState(() => _medicalItems.add(_MedicalItemDraft()));
+  }
+
+  void _removeMedicalItem(int index) {
+    setState(() {
+      _medicalItems[index].dispose();
+      _medicalItems.removeAt(index);
+      _updateMedicalAmount();
+    });
+  }
+
+  void _onMedicalItemsChanged() {
+    if (!mounted) return;
+    setState(_updateMedicalAmount);
+  }
+
+  void _updateMedicalAmount() {
+    if (!_isMedical) return;
+    _amountController.text = _medicalTotal.toStringAsFixed(2);
+    _amountAutoCalculated = true;
+  }
+
+  double get _calculatedBaseAmount {
+    final quantity = double.tryParse(_quantityController.text.trim()) ?? 0;
+    final unitPrice = double.tryParse(_unitPriceController.text.trim()) ?? 0;
+    return quantity * unitPrice;
+  }
+
+  double get _netTotal {
+    final amount = double.tryParse(_amountController.text.trim()) ?? 0;
+    final freight = double.tryParse(_freightController.text.trim()) ?? 0;
+    return amount + freight;
+  }
+
+  void _recalculateAmount() {
+    if (!_usesMaterialPricing) return;
+    // Amount is the editable material/base amount. Recalculate it from
+    // quantity × unit price when those inputs change; freight is added only
+    // to Net Total and is never folded into Amount.
+    _amountController.text = _calculatedBaseAmount.toStringAsFixed(2);
+    _amountAutoCalculated = true;
+    if (mounted) setState(() {});
+  }
+
   Widget _buildCategoryFields() {
     if (_selectedCategory == 'Electricity') {
       return _buildTextField(_amountController, 'Amount Paid (₹)', TextInputType.numberWithOptions(decimal: true));
     }
-    if (_selectedCategory == 'Tray') {
-      return LayoutBuilder(builder: (context, c) {
-        final fields = [
-          _buildTextField(_quantityController, 'No. of Bundles', TextInputType.numberWithOptions(decimal: true)),
-          _buildTextField(_amountController, 'Amount Paid (₹)', TextInputType.numberWithOptions(decimal: true)),
-        ];
-        return c.maxWidth >= 700 ? Row(children: fields.map((f) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: f))).toList()) : Column(children: fields);
-      });
+
+    if (_isMedical) {
+      return _buildMedicalFields();
     }
+
+    if (_usesMaterialPricing) {
+      return Column(children: [
+        LayoutBuilder(builder: (context, c) {
+          final fields = [
+            _buildTextField(_quantityController, _selectedCategory == 'Tray' ? 'No. of Bundles' : 'Quantity', TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _recalculateAmount()),
+            _buildTextField(_unitPriceController, 'Unit Price (₹)', TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _recalculateAmount()),
+          ];
+          return c.maxWidth >= 700
+              ? Row(children: fields.map((f) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: f))).toList())
+              : Column(children: fields);
+        }),
+        _buildTextField(_freightController, 'Freight Charge (₹)', TextInputType.numberWithOptions(decimal: true), required: true, onChanged: (_) => setState(() {})),
+        _buildTextField(_amountController, 'Amount (₹)', TextInputType.numberWithOptions(decimal: true), required: true, readOnly: false, onChanged: (_) { _amountAutoCalculated = false; setState(() {}); }),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('Net Total: ₹${_netTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF087A4F))),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Amount = Quantity × Unit Price (editable) • Net Total = Amount + Freight Charge', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
+          ),
+        ),
+      ]);
+    }
+
     return LayoutBuilder(builder: (context, c) {
       final fields = [
         _buildTextField(_amountController, 'Amount (₹)', TextInputType.numberWithOptions(decimal: true)),
@@ -162,7 +257,77 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
     });
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, TextInputType type, {bool required = true, ValueChanged<String>? onChanged}) {
+  Widget _buildMedicalFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Medical Items', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
+            OutlinedButton.icon(
+              onPressed: _addMedicalItem,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add Item'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (_medicalItems.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Add each medicine separately with its name, price and quantity.', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
+          ),
+        ...List.generate(_medicalItems.length, (index) {
+          final item = _medicalItems[index];
+          return Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FBF9),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: const Color(0xFFDCE7E0)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: _buildTextField(item.name, 'Medicine / Item Name', TextInputType.text, onChanged: (_) => _onMedicalItemsChanged())),
+                    const SizedBox(width: 8),
+                    IconButton(onPressed: () => _removeMedicalItem(index), icon: const Icon(Icons.delete_outline), tooltip: 'Remove item'),
+                  ],
+                ),
+                LayoutBuilder(builder: (context, c) {
+                  final fields = [
+                    _buildTextField(item.price, 'Price (₹)', const TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _onMedicalItemsChanged()),
+                    _buildTextField(item.quantity, 'Quantity', const TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _onMedicalItemsChanged()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: InputDecorator(
+                        decoration: _decoration('Item Total (₹)', Icons.calculate_outlined),
+                        child: Text('₹${item.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ];
+                  return c.maxWidth >= 700
+                      ? Row(children: fields.map((f) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: f))).toList())
+                      : Column(children: fields);
+                }),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        _buildTextField(_freightController, 'Freight Charge (₹)', const TextInputType.numberWithOptions(decimal: true), required: true, onChanged: (_) => setState(() {})),
+        const SizedBox(height: 4),
+        Text('Total Amount: ₹${_medicalTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF087A4F))),
+        const SizedBox(height: 2),
+        Text('Net Total: ₹${(_medicalTotal + (double.tryParse(_freightController.text.trim()) ?? 0)).toStringAsFixed(2)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF087A4F))),
+      ],
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String label, TextInputType type, {bool required = true, bool readOnly = false, ValueChanged<String>? onChanged}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: TextFormField(
@@ -171,6 +336,7 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
         style: const TextStyle(color: Color(0xFF172A21), fontWeight: FontWeight.w600),
         decoration: _decoration(label, Icons.edit_outlined),
         keyboardType: type,
+        readOnly: readOnly,
         validator: (value) {
           if (required && (value == null || value.trim().isEmpty)) return 'Required';
           if (!required && (value == null || value.trim().isEmpty)) return null;
@@ -191,14 +357,23 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
     _amountController.dispose();
     _unitController.dispose();
     _quantityController.dispose();
+    _unitPriceController.dispose();
+    _freightController.dispose();
+    _clearMedicalItems();
     super.dispose();
   }
 
   void _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
-    final amount = double.tryParse(_amountController.text.trim()) ?? -1;
-    final quantity = _selectedCategory == 'Electricity' ? 0.0 : (double.tryParse(_quantityController.text.trim()) ?? -1);
-    if (amount < 0 || quantity < 0) {
+    if (_isMedical && _medicalItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one medical item.')));
+      return;
+    }
+    final quantity = _selectedCategory == 'Electricity' || _isMedical ? 0.0 : (double.tryParse(_quantityController.text.trim()) ?? -1);
+    final unitPrice = _usesMaterialPricing ? (double.tryParse(_unitPriceController.text.trim()) ?? -1) : 0.0;
+    final freightCharge = (_usesMaterialPricing || _isMedical) ? (double.tryParse(_freightController.text.trim()) ?? -1) : 0.0;
+    final amount = _isMedical ? _medicalTotal : (_usesMaterialPricing ? (double.tryParse(_amountController.text.trim()) ?? -1) : (double.tryParse(_amountController.text.trim()) ?? -1));
+    if (amount < 0 || quantity < 0 || unitPrice < 0 || freightCharge < 0 || (_isMedical && _medicalItems.any((item) => item.name.text.trim().isEmpty || item.priceValue < 0 || item.quantityValue < 0))) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter valid non-negative values.')));
       return;
     }
@@ -210,6 +385,10 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
       account: _selectedAccount,
       description: _selectedCategory == 'Electricity' ? 'Electricity bill' : _descriptionController.text.trim(),
       amount: amount,
+      unitPrice: unitPrice,
+      freightCharge: freightCharge,
+      pricingCalculated: _usesMaterialPricing && _amountAutoCalculated,
+      medicalItems: _isMedical ? _medicalItems.map((item) => item.toMap()).toList() : const [],
       unit: _selectedCategory == 'Electricity' ? 'rupees' : (_selectedCategory == 'Tray' ? 'bundle' : _unitController.text.trim()),
       quantity: quantity,
       transactionType: _selectedCategory == 'Egg_Sales' ? 'credit' : 'expense',
@@ -224,5 +403,30 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
       if (mounted) Navigator.pop(context);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving record: $e')));
     }
+  }
+}
+
+
+class _MedicalItemDraft {
+  final TextEditingController name = TextEditingController();
+  final TextEditingController price = TextEditingController(text: '0');
+  final TextEditingController quantity = TextEditingController(text: '1');
+  _MedicalItemDraft();
+
+  double get priceValue => double.tryParse(price.text.trim()) ?? 0;
+  double get quantityValue => double.tryParse(quantity.text.trim()) ?? 0;
+  double get total => priceValue * quantityValue;
+
+  Map<String, dynamic> toMap() => {
+    'name': name.text.trim(),
+    'price': priceValue,
+    'quantity': quantityValue,
+    'total': total,
+  };
+
+  void dispose() {
+    name.dispose();
+    price.dispose();
+    quantity.dispose();
   }
 }

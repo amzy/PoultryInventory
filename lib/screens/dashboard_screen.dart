@@ -13,12 +13,19 @@ import 'expense_sales_form_screen.dart';
 import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final int initialIndex;
+  const DashboardScreen({super.key, this.initialIndex = 0});
   @override State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex.clamp(0, poultryNavItems.length - 1);
+  }
 
   void _navigate(int index) {
     if (_selectedIndex == index) return;
@@ -38,13 +45,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 4:
       case 5:
       case 6:
+      case 7:
         return ExpenseSalesFormScreen(
           initialCategory: poultryNavItems[_selectedIndex].label.replaceAll(' ', '_'),
           embedded: true,
           onEmbeddedBack: () => _navigate(0),
           key: ValueKey('expense-$_selectedIndex'),
         );
-      case 7:
+      case 8:
         return const SettingsScreen(embedded: true, key: ValueKey('settings'));
       default:
         return _dashboardBody(provider);
@@ -54,7 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Consumer<PoultryProvider>(builder: (context, provider, _) {
-      final isExpense = _selectedIndex >= 2 && _selectedIndex <= 6;
+      final isExpense = _selectedIndex >= 2 && _selectedIndex <= 7;
       final category = isExpense ? poultryNavItems[_selectedIndex].label : '';
       return PoultryAppShell(
         selectedIndex: _selectedIndex,
@@ -83,14 +91,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _pageTitle(String category) {
     if (_selectedIndex == 0) return 'Dashboard';
     if (_selectedIndex == 1) return 'Add Daily Log';
-    if (_selectedIndex == 7) return 'Settings';
+    if (_selectedIndex == 8) return 'Settings';
     return 'Add ${category == 'Egg Sales' ? 'Egg Sales' : 'Expense'}';
   }
 
   String _pageSubtitle() {
     if (_selectedIndex == 0) return 'Overview of your poultry farm';
     if (_selectedIndex == 1) return 'Track daily flock data';
-    if (_selectedIndex == 7) return 'App preferences and data tools';
+    if (_selectedIndex == 8) return 'App preferences and data tools';
     return 'Record farm financial activity';
   }
 
@@ -179,8 +187,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       grouped.putIfAbsent(key, () => []).add(record);
     }
     final entries = grouped.entries.toList()
-      ..sort((a, b) => b.value.fold<double>(0, (sum, e) => sum + e.amount).compareTo(b.value.fold<double>(0, (sum, e) => sum + e.amount)));
-    final values = entries.map((e) => e.value.fold<double>(0, (sum, r) => sum + r.amount)).toList();
+      ..sort((a, b) => b.value.fold<double>(0, (sum, e) => sum + e.netTotal).compareTo(b.value.fold<double>(0, (sum, e) => sum + e.netTotal)));
+    final values = entries.map((e) => e.value.fold<double>(0, (sum, r) => sum + r.netTotal)).toList();
 
     return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Expenses & Sales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
@@ -247,7 +255,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _showCategoryTransactions(String category, List<ExpenseSalesLog> records) {
     final sorted = [...records]..sort((a, b) => b.date.compareTo(a.date));
-    final total = sorted.fold<double>(0, (sum, r) => sum + r.amount);
+    final total = sorted.fold<double>(0, (sum, r) => sum + r.netTotal);
     final isSale = category == 'Credits / Earnings';
     showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
       title: Row(children: [Expanded(child: Text(category)), IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close))]),
@@ -257,7 +265,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(child: sorted.isEmpty ? const Align(alignment: Alignment.topLeft, child: Text('No transactions.')) : ListView.separated(itemCount: sorted.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, index) {
           final r = sorted[index];
           final detail = [r.account.trim(), r.description.trim(), r.category == category ? '' : r.category, r.unit.trim().isEmpty ? '' : '${r.quantity % 1 == 0 ? r.quantity.toInt() : r.quantity} ${r.unit}'].where((x) => x.isNotEmpty).join(' • ');
-          return ListTile(contentPadding: EdgeInsets.zero, leading: CircleAvatar(radius: 16, backgroundColor: isSale ? const Color(0xFFE4F7EC) : const Color(0xFFFFF3E2), child: Icon(isSale ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 16, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))), title: Text(_money(r.amount), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)), subtitle: Text('${DateFormat('dd MMM yyyy').format(r.date)}${detail.isEmpty ? '' : ' • $detail'}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))));
+          return ListTile(contentPadding: EdgeInsets.zero, leading: CircleAvatar(radius: 16, backgroundColor: isSale ? const Color(0xFFE4F7EC) : const Color(0xFFFFF3E2), child: Icon(isSale ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 16, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))), title: Text(_money(r.netTotal), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)), subtitle: Text('${DateFormat('dd MMM yyyy').format(r.date)}${detail.isEmpty ? '' : ' • $detail'}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))));
         })),
       ])),
       actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
@@ -289,8 +297,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 runSpacing: 10,
                 children: names.map((name) {
                   final records = p.expenseRecords.where((e) => e.account.trim() == name).toList();
-                  final expenses = records.where((e) => e.transactionType != 'credit').fold<double>(0, (sum, e) => sum + e.amount);
-                  final credits = records.where((e) => e.transactionType == 'credit').fold<double>(0, (sum, e) => sum + e.amount);
+                  final expenses = records.where((e) => e.transactionType != 'credit').fold<double>(0, (sum, e) => sum + e.netTotal);
+                  final credits = records.where((e) => e.transactionType == 'credit').fold<double>(0, (sum, e) => sum + e.netTotal);
                   return SizedBox(
                     width: width,
                     child: Container(
@@ -323,7 +331,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final groups = <String, double>{};
     for (final e in p.expenseRecords.where((e) => e.transactionType != 'credit')) {
       final key = e.mainCategory.trim().isEmpty ? 'Uncategorized' : e.mainCategory.trim();
-      groups[key] = (groups[key] ?? 0) + e.amount;
+      groups[key] = (groups[key] ?? 0) + e.netTotal;
     }
     final entries = groups.entries.toList()..sort((a,b) => b.value.compareTo(a.value));
     return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

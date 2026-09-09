@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:intl/intl.dart';
 import '../models/expense_sales_log.dart';
 import '../models/poultry_log.dart';
 import 'poultry_calculation_service.dart';
@@ -286,42 +287,69 @@ class FirebaseService {
     return imported.length;
   }
 
-  Future<CashewImportResult> importCashewRecords(List<Map<String, dynamic>> records) async {
+  Future<CashewImportResult> importCashewRecords(
+    List<Map<String, dynamic>> records, {
+    void Function(String message)? onProgress,
+  }) async {
     if (records.isEmpty) return const CashewImportResult();
+
+    onProgress?.call('Validating ${records.length} transaction(s)…');
     final parsed = CashewMigrationParser.parseRecords(records);
     var imported = 0;
     var updated = 0;
     var unchanged = 0;
 
-    for (var start = 0; start < parsed.length; start += 400) {
-      final end = (start + 400 < parsed.length) ? start + 400 : parsed.length;
+    // Use one read of the user's expense collection. This is intentionally
+    // simpler and more reliable on Web/Safari than a series of whereIn calls.
+    onProgress?.call('Checking existing transactions…');
+    final existingSnapshot = await _expenses.get().timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw StateError(
+        'Timed out reading Firestore expense records after 30 seconds. ' 
+        'Check the Safari console/network connection.',
+      ),
+    );
+    final existing = <String, Map<String, dynamic>>{
+      for (final doc in existingSnapshot.docs) doc.id: doc.data(),
+    };
+
+    // Small commits make Web imports observable and prevent one large request
+    // from looking like an endless import.
+    const writeBatchSize = 20;
+    final totalBatches = (parsed.length + writeBatchSize - 1) ~/ writeBatchSize;
+
+    for (var start = 0; start < parsed.length; start += writeBatchSize) {
+      final end = (start + writeBatchSize < parsed.length)
+          ? start + writeBatchSize
+          : parsed.length;
       final chunk = parsed.sublist(start, end);
+      final batchNumber = (start ~/ writeBatchSize) + 1;
+      onProgress?.call('Writing batch $batchNumber of $totalBatches ($start–$end)…');
+
       final batch = _db.batch();
       var writes = 0;
 
       for (final item in chunk) {
         final transactionId = item['transactionId'] as String;
         final date = DateTime.tryParse(item['date'] as String);
-        if (date == null) continue;
+        if (date == null) {
+          throw StateError('Invalid date for transaction $transactionId.');
+        }
 
         final source = item['source']?.toString() ?? '';
-        // App-generated SQL exports contain the original Firestore document ID,
-        // so re-importing an app export updates the same record instead of
-        // creating cashew_cashew_* duplicates. External Cashew records remain
-        // namespaced under cashew_.
         final id = source == 'poultry_inventory_export'
             ? transactionId
             : (transactionId.startsWith('cashew_') ? transactionId : 'cashew_$transactionId');
         if (id.trim().isEmpty) {
           throw StateError('Cashew/app export contains a transaction without an ID.');
         }
+
         final mainCategory = item['mainCategory'] as String;
         final category = item['category'] as String;
         if (!ExpenseCategoryConfig.isValidMainCategory(mainCategory) ||
             !ExpenseCategoryConfig.isValidSubcategory(mainCategory, category)) {
           throw StateError(
-            'Cashew transaction $transactionId has unsupported mapping: '
-            '$mainCategory / $category.',
+            'Cashew transaction $transactionId has unsupported mapping: $mainCategory / $category.',
           );
         }
 
@@ -336,31 +364,40 @@ class FirebaseService {
               ? (item['description'] as String).substring(0, 500)
               : item['description'] as String,
           amount: item['amount'] as double,
+          unitPrice: (item['unitPrice'] as num?)?.toDouble() ?? 0.0,
+          freightCharge: (item['freightCharge'] as num?)?.toDouble() ?? 0.0,
+          pricingCalculated: item['pricingCalculated'] == true,
           unit: item['unit'] as String,
           quantity: item['quantity'] as double,
           transactionType: item['transactionType'] as String,
         );
 
+        final oldData = existing[id];
         final ref = _expenses.doc(id);
-        final snap = await ref.get();
-        if (!snap.exists) {
-          batch.set(ref, record.toFirestore());
+
+        if (oldData == null) {
+          final data = record.toFirestore(includeCreatedAt: false);
+          data['createdAt'] = Timestamp.fromDate(record.date);
+          batch.set(ref, data);
           imported++;
           writes++;
           continue;
         }
 
-        final existing = ExpenseSalesLog.fromFirestore(snap.data()!, id: id);
-        final changed = existing.date != record.date ||
-            existing.mainCategory != record.mainCategory ||
-            existing.category != record.category ||
-            existing.originalCategory != record.originalCategory ||
-            existing.account != record.account ||
-            existing.description != record.description ||
-            existing.amount != record.amount ||
-            existing.unit != record.unit ||
-            existing.quantity != record.quantity ||
-            existing.transactionType != record.transactionType;
+        final existingRecord = ExpenseSalesLog.fromFirestore(oldData, id: id);
+        final changed = existingRecord.date != record.date ||
+            existingRecord.mainCategory != record.mainCategory ||
+            existingRecord.category != record.category ||
+            existingRecord.originalCategory != record.originalCategory ||
+            existingRecord.account != record.account ||
+            existingRecord.description != record.description ||
+            existingRecord.amount != record.amount ||
+            existingRecord.unitPrice != record.unitPrice ||
+            existingRecord.freightCharge != record.freightCharge ||
+            existingRecord.pricingCalculated != record.pricingCalculated ||
+            existingRecord.unit != record.unit ||
+            existingRecord.quantity != record.quantity ||
+            existingRecord.transactionType != record.transactionType;
 
         if (!changed) {
           unchanged++;
@@ -368,15 +405,98 @@ class FirebaseService {
         }
 
         final data = record.toFirestore(includeCreatedAt: false);
-        data['createdAt'] = snap.data()?['createdAt'];
+        final createdAt = oldData['createdAt'];
+        data['createdAt'] = createdAt is Timestamp ? createdAt : Timestamp.fromDate(record.date);
         batch.set(ref, data);
         updated++;
         writes++;
       }
 
-      if (writes > 0) await batch.commit();
+      if (writes > 0) {
+        try {
+          await batch.commit().timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw StateError(
+              'Timed out committing import batch $batchNumber/$totalBatches after 30 seconds. ' 
+              'Open Safari Web Inspector → Console for the underlying Firestore/network error.',
+            ),
+          );
+        } on FirebaseException catch (e) {
+          // Older versions of the deployed Firestore rules do not know about
+          // the newer pricing fields (unitPrice/freightCharge/pricingCalculated)
+          // or optional Medical line items. If such rules are still deployed,
+          // retry this atomic batch with the legacy expense shape. Once the
+          // latest rules are deployed, the normal payload is used.
+          if (e.code != 'permission-denied') {
+            throw StateError('Firestore rejected import batch $batchNumber/$totalBatches: ${e.message ?? e.code}');
+          }
+
+          onProgress?.call(
+            'Current Firestore rules rejected the new fields; retrying batch $batchNumber/$totalBatches with legacy-compatible expense fields…',
+          );
+          final legacyBatch = _db.batch();
+          for (final item in chunk) {
+            final transactionId = item['transactionId'] as String;
+            final date = DateTime.tryParse(item['date'] as String);
+            if (date == null) continue;
+            final source = item['source']?.toString() ?? '';
+            final id = source == 'poultry_inventory_export'
+                ? transactionId
+                : (transactionId.startsWith('cashew_') ? transactionId : 'cashew_$transactionId');
+            final oldData = existing[id];
+            final record = ExpenseSalesLog(
+              id: id,
+              date: date,
+              mainCategory: item['mainCategory'] as String,
+              category: item['category'] as String,
+              originalCategory: item['originalCategory'] as String,
+              account: item['account'] as String,
+              description: (item['description'] as String).length > 500
+                  ? (item['description'] as String).substring(0, 500)
+                  : item['description'] as String,
+              amount: item['amount'] as double,
+              unit: item['unit'] as String,
+              quantity: item['quantity'] as double,
+              transactionType: item['transactionType'] as String,
+            );
+            final data = <String, dynamic>{
+              'date': Timestamp.fromDate(record.date),
+              'dateKey': DateFormat('yyyy-MM-dd').format(record.date),
+              'mainCategory': record.mainCategory.trim().isEmpty ? 'Layer Bird' : record.mainCategory.trim(),
+              'category': record.category.trim(),
+              'originalCategory': record.originalCategory.trim().isEmpty ? record.category.trim() : record.originalCategory.trim(),
+              'account': record.account.trim().isEmpty ? 'Amzad Khan' : record.account.trim(),
+              'description': record.description,
+              'amount': record.amount,
+              'unit': record.unit,
+              'quantity': record.quantity,
+              'transactionType': record.transactionType,
+              'createdAt': oldData?['createdAt'] is Timestamp
+                  ? oldData!['createdAt']
+                  : Timestamp.fromDate(record.date),
+            };
+            legacyBatch.set(_expenses.doc(id), data);
+          }
+
+          try {
+            await legacyBatch.commit().timeout(
+              const Duration(seconds: 30),
+              onTimeout: () => throw StateError(
+                'Timed out committing legacy import batch $batchNumber/$totalBatches after 30 seconds.',
+              ),
+            );
+          } on FirebaseException catch (legacyError) {
+            throw StateError(
+              'Firestore rejected import batch $batchNumber/$totalBatches: permission-denied. ' 
+              'The deployed Firestore rules are incompatible with this app. ' 
+              'Deploy the latest firestore.rules, then retry the import. (${legacyError.message ?? legacyError.code})',
+            );
+          }
+        }
+      }
     }
 
+    onProgress?.call('Import finished.');
     return CashewImportResult(imported: imported, updated: updated, unchanged: unchanged);
   }
 

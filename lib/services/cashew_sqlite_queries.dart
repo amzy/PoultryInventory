@@ -42,6 +42,8 @@ class CashewSqliteQueries {
       final sub = categories[text(row['sub_category_fk'])];
       final mainName = text(main?['name']).isEmpty ? 'Cashew' : text(main?['name']);
       final originalCategory = text(sub?['name']).isEmpty ? mainName : text(sub?['name']);
+      final sourceAmount = number(row['amount']).abs();
+      final freight = _importFreight(sourceAmount, originalCategory);
 
       records.add({
         'transactionId': text(row['transaction_pk']),
@@ -50,9 +52,13 @@ class CashewSqliteQueries {
         'originalCategory': originalCategory,
         'account': wallets[text(row['wallet_fk'])] ?? 'Unassigned',
         'description': [text(row['name']), text(row['note'])].where((e) => e.isNotEmpty).join(' • '),
-        // Cashew stores expenses as negative amounts. Firestore stores the
-        // positive amount and transactionType tells us whether it is expense/credit.
-        'amount': number(row['amount']).abs(),
+        // Legacy Cashew Feed purchases reserve ₹700 as freight when the source
+        // amount is greater than ₹700. Amount + Freight remains the original
+        // transaction total.
+        'amount': sourceAmount - freight,
+        'unitPrice': 0.0,
+        'freightCharge': freight,
+        'pricingCalculated': false,
         'unit': 'rupees',
         'quantity': 0.0,
         'income': row['income'] == true || row['income'] == 1 || row['income']?.toString() == '1',
@@ -60,5 +66,14 @@ class CashewSqliteQueries {
     }
 
     return records;
+  }
+
+  static double _importFreight(double sourceAmount, String sourceCategory) {
+    final key = sourceCategory
+        .replaceAll(RegExp(r'[^A-Za-z0-9]+'), ' ')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .toLowerCase();
+    return key == 'layer feed' && sourceAmount > 700 ? 700.0 : 0.0;
   }
 }

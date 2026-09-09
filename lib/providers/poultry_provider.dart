@@ -55,10 +55,19 @@ class PoultryProvider with ChangeNotifier {
       rethrow;
     }
   }
-  Future<CashewImportResult> importCashewRecords(List<Map<String, dynamic>> records) async {
+  Future<CashewImportResult> importCashewRecords(List<Map<String, dynamic>> records, {void Function(String message)? onProgress}) async {
     try {
-      final imported = await _firebase.importCashewRecords(records);
-      await fetchLogs();
+      final imported = await _firebase.importCashewRecords(records, onProgress: onProgress);
+      // The import only changes financial records. Refresh expenses directly
+      // instead of reloading Daily Logs first; this keeps the import completion
+      // state from waiting on an unrelated daily-log query and makes the
+      // dashboard reflect imported expenses immediately.
+      onProgress?.call('Import committed. Refreshing expenses…');
+      final expenses = await _firebase.fetchExpenseRecords();
+      _expenseRecords = List<ExpenseSalesLog>.from(expenses)
+        ..sort((a, b) => b.date.compareTo(a.date));
+      notifyListeners();
+      onProgress?.call('Import finished.');
       _errorMessage = null;
       return imported;
     } catch (e) {
@@ -77,9 +86,9 @@ class PoultryProvider with ChangeNotifier {
   double get totalFeedKg=>_logs.fold(0.0,(s,e)=>s+e.feedConsumed);
   double get totalEggs=>_logs.fold(0.0,(s,e)=>s+e.totalEggs);
   double get totalTrays=>_logs.fold(0.0,(s,e)=>s+e.trays);
-  double get totalExpenses=>_expenseRecords.where((e)=>e.transactionType!='credit').fold(0.0,(s,e)=>s+e.amount);
-  double get totalCredits=>_expenseRecords.where((e)=>e.transactionType=='credit').fold(0.0,(s,e)=>s+e.amount);
-  double get totalEggSales=>_expenseRecords.where((e)=>e.category=='Egg_Sales' || e.transactionType=='credit').fold(0.0,(s,e)=>s+e.amount);
+  double get totalExpenses=>_expenseRecords.where((e)=>e.transactionType!='credit').fold(0.0,(s,e)=>s+e.netTotal);
+  double get totalCredits=>_expenseRecords.where((e)=>e.transactionType=='credit').fold(0.0,(s,e)=>s+e.netTotal);
+  double get totalEggSales=>_expenseRecords.where((e)=>e.category=='Egg_Sales' || e.transactionType=='credit').fold(0.0,(s,e)=>s+e.netTotal);
   double get netExpense=>totalExpenses-totalCredits;
   double get averageFcr {final x=_logs.map((e)=>e.automatedFCR).where((e)=>e>0).toList();return x.isEmpty?0:x.reduce((a,b)=>a+b)/x.length;}
 }

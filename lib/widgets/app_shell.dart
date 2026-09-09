@@ -15,6 +15,7 @@ const poultryNavItems = <AppNavItem>[
   AppNavItem('Medical', 'Record medical expenses', Icons.medical_services_outlined, Color(0xFFEF4444)),
   AppNavItem('Feed', 'Track feed purchases', Icons.inventory_2_outlined, Color(0xFFF59E0B)),
   AppNavItem('Grit', 'Track grit purchases', Icons.scatter_plot_outlined, Color(0xFF9A6B22)),
+  AppNavItem('Tray', 'Track tray purchases', Icons.inventory_2_outlined, Color(0xFF0EA5A4)),
   AppNavItem('Other Expenses', 'Record other expenses', Icons.folder_outlined, Color(0xFF7C3AED)),
   AppNavItem('Egg Sales', 'Track egg sales', Icons.egg_alt_outlined, Color(0xFFF97316)),
   AppNavItem('Settings', 'App preferences', Icons.settings_outlined, Color(0xFF64748B)),

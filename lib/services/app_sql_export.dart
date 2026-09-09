@@ -8,7 +8,7 @@ import '../models/expense_sales_log.dart';
 /// so it can be backed up, inspected, and imported again by this app.
 class AppSqlExport {
   static const tableName = 'poultry_inventory_transactions';
-  static const marker = 'POULTRY_INVENTORY_SQL_EXPORT_V1';
+  static const marker = 'POULTRY_INVENTORY_SQL_EXPORT_V2';
 
   static String buildExpenseSql(List<ExpenseSalesLog> records) {
     final out = StringBuffer();
@@ -27,6 +27,9 @@ class AppSqlExport {
   account TEXT NOT NULL,
   description TEXT NOT NULL,
   amount REAL NOT NULL,
+  unit_price REAL NOT NULL,
+  freight_charge REAL NOT NULL,
+  pricing_calculated INTEGER NOT NULL,
   unit TEXT NOT NULL,
   quantity REAL NOT NULL,
   transaction_type TEXT NOT NULL
@@ -35,7 +38,7 @@ class AppSqlExport {
     for (final record in records) {
       final id = record.id ?? '';
       out.writeln('INSERT INTO $tableName '
-          '(transaction_id,date,main_category,category,original_category,account,description,amount,unit,quantity,transaction_type) VALUES ('
+          '(transaction_id,date,main_category,category,original_category,account,description,amount,unit_price,freight_charge,pricing_calculated,unit,quantity,transaction_type) VALUES ('
           '${_quote(id)},'
           '${_quote(_date(record.date))},'
           '${_quote(record.mainCategory)},'
@@ -44,6 +47,9 @@ class AppSqlExport {
           '${_quote(record.account)},'
           '${_quote(record.description)},'
           '${_number(record.amount)},'
+          '${_number(record.unitPrice)},'
+          '${_number(record.freightCharge)},'
+          '${record.pricingCalculated ? 1 : 0},'
           '${_quote(record.unit)},'
           '${_number(record.quantity)},'
           '${_quote(record.transactionType)});');
