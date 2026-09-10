@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../providers/poultry_provider.dart';
+import '../screens/profile_screen.dart';
 
 class AppNavItem {
   final String label;
@@ -11,6 +14,7 @@ class AppNavItem {
 
 const poultryNavItems = <AppNavItem>[
   AppNavItem('Dashboard', 'Overview & reports', Icons.dashboard_outlined, Color(0xFF16A34A)),
+  AppNavItem('Reports', 'Production & financial analytics', Icons.bar_chart_outlined, Color(0xFF0E9F6E)),
   AppNavItem('Daily Log', 'Track daily flock data', Icons.calendar_month_outlined, Color(0xFF2563EB)),
   AppNavItem('Medical', 'Record medical expenses', Icons.medical_services_outlined, Color(0xFFEF4444)),
   AppNavItem('Feed', 'Track feed purchases', Icons.inventory_2_outlined, Color(0xFFF59E0B)),
@@ -95,7 +99,7 @@ class _DesktopSidebar extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 18),
-            Image.asset('assets/app_icons/playstore.png', width: 70, height: 70),
+            ClipRRect(borderRadius: BorderRadius.circular(18), child: Image.asset('assets/app_icons/app_logo.png', width: 70, height: 70, fit: BoxFit.cover)),
             const SizedBox(height: 8),
             const Text('Poultry Inventory', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
@@ -108,15 +112,15 @@ class _DesktopSidebar extends StatelessWidget {
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 itemCount: poultryNavItems.length,
-                itemBuilder: (context, index) => _NavTile(
-                  item: poultryNavItems[index],
-                  selected: index == selectedIndex,
-                  compact: true,
-                  onTap: onNavigate == null ? null : () => onNavigate!(index),
-                ),
+                itemBuilder: (context, index) {
+                  final item = poultryNavItems[index];
+                  return _NavTile(item: item, selected: index == selectedIndex, compact: true, onTap: onNavigate == null ? null : () => onNavigate!(index));
+                },
               ),
             ),
             const Divider(color: Colors.white24, indent: 16, endIndent: 16),
+            _LogoutTile(),
+            const SizedBox(height: 8),
             const _UserProfileTile(),
             const SizedBox(height: 8),
           ],
@@ -139,7 +143,7 @@ class _MobileDrawer extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 18),
-            Image.asset('assets/app_icons/playstore.png', width: 76, height: 76),
+            ClipRRect(borderRadius: BorderRadius.circular(19), child: Image.asset('assets/app_icons/app_logo.png', width: 76, height: 76, fit: BoxFit.cover)),
             const SizedBox(height: 8),
             const Text('Poultry Inventory', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
             const SizedBox(height: 20),
@@ -147,16 +151,49 @@ class _MobileDrawer extends StatelessWidget {
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 itemCount: poultryNavItems.length,
-                itemBuilder: (context, index) => _NavTile(
-                  item: poultryNavItems[index],
-                  selected: index == selectedIndex,
-                  onTap: onNavigate == null ? null : () { Navigator.pop(context); onNavigate!(index); },
-                ),
+                itemBuilder: (context, index) {
+                  final item = poultryNavItems[index];
+                  return _NavTile(item: item, selected: index == selectedIndex, onTap: onNavigate == null ? null : () { Navigator.pop(context); onNavigate!(index); });
+                },
               ),
             ),
+            const Divider(color: Colors.white24, indent: 16, endIndent: 16),
+            const _LogoutTile(),
+            const SizedBox(height: 12),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _LogoutTile extends StatelessWidget {
+  const _LogoutTile();
+
+  Future<void> _logout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('You can sign back in anytime with your account.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sign out')),
+        ],
+      ),
+    );
+    if (shouldLogout != true || !context.mounted) return;
+    await context.read<PoultryProvider>().signOut();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.logout_rounded, color: Colors.white70, size: 20),
+      title: const Text('Sign out', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onTap: () => _logout(context),
     );
   }
 }
@@ -169,47 +206,40 @@ class _UserProfileTile extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
     final displayName = user?.displayName?.trim();
     final email = user?.email?.trim();
-    final name = (displayName == null || displayName.isEmpty) ? 'Google User' : displayName;
+    final name = (displayName == null || displayName.isEmpty) ? 'User' : displayName;
     final photoUrl = user?.photoURL;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.white24,
-            backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl),
-            child: photoUrl == null
-                ? const Icon(Icons.person, color: Colors.white, size: 19)
-                : null,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  email ?? 'Firebase secured',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white60, fontSize: 9.5),
-                ),
-              ],
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.white24,
+              backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl),
+              child: photoUrl == null ? const Icon(Icons.person, color: Colors.white, size: 19) : null,
             ),
-          ),
-        ],
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                  const SizedBox(height: 2),
+                  Text(email ?? 'Firebase secured', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white60, fontSize: 9.5)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white54, size: 17),
+          ],
+        ),
       ),
     );
   }

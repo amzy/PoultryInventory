@@ -14,9 +14,10 @@ class LogFormScreen extends StatefulWidget {
 }
 
 class _LogFormScreenState extends State<LogFormScreen> {
-  static final DateTime _minimumLogDate = DateTime(2026, 4, 27);
   final _formKey = GlobalKey<FormState>();
+  final _dateFocusNode = FocusNode();
   DateTime _selectedDate = DateTime.now();
+  bool _forceNewEntry = false;
   final _mortalityController = TextEditingController(text: '0');
   final _traysController = TextEditingController();
   final _avgTrayWeightController = TextEditingController();
@@ -37,7 +38,6 @@ class _LogFormScreenState extends State<LogFormScreen> {
       _stoneGritConsumedController.text = existing.stoneGritConsumed.toString();
       _waterIntakeController.text = existing.waterIntake.toString();
     }
-    for(final c in [_mortalityController,_traysController,_feedConsumedController]) c.addListener(_refreshPreview);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (widget.existingLog == null) {
@@ -46,8 +46,48 @@ class _LogFormScreenState extends State<LogFormScreen> {
       }
     });
   }
-  @override void dispose() { for(final c in [_mortalityController,_traysController,_feedConsumedController]) c.removeListener(_refreshPreview); for(final c in [_mortalityController,_traysController,_avgTrayWeightController,_feedConsumedController,_stoneGritConsumedController,_waterIntakeController]) c.dispose(); super.dispose(); }
-  void _refreshPreview() { if(mounted) setState(() {}); }
+  @override void dispose() { _dateFocusNode.dispose(); for(final c in [_mortalityController,_traysController,_avgTrayWeightController,_feedConsumedController,_stoneGritConsumedController,_waterIntakeController]) c.dispose(); super.dispose(); }
+
+  bool get _editing => widget.existingLog != null && !_forceNewEntry;
+
+  void _resetForNewEntry() {
+    _forceNewEntry = true;
+    _selectedDate = DateTime.now();
+    _mortalityController.text = '0';
+    _traysController.clear();
+    _avgTrayWeightController.clear();
+    _feedConsumedController.clear();
+    _stoneGritConsumedController.clear();
+    _waterIntakeController.clear();
+    _formKey.currentState?.reset();
+  }
+
+  Future<void> _showSaveConfirmation() async {
+    if (!mounted) return;
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Daily Log Saved'),
+        content: const Text('Your Daily Log was saved successfully. What would you like to do next?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, 'dashboard'), child: const Text('Back to Dashboard')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, 'previous'), child: const Text('Enter/Edit Previous Date')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'dashboard') {
+      if (widget.embedded) { widget.onEmbeddedBack?.call(); } else { Navigator.pop(context, true); }
+    } else if (action == 'previous') {
+      _resetForNewEntry();
+      setState(() {});
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
+      _dateFocusNode.requestFocus();
+      await _pickDate();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,9 +98,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
           const SizedBox(height: 14),
           if (wide) _wideSections() else _narrowSections(),
           const SizedBox(height: 14),
-          _calculatedPreview(wide),
-          const SizedBox(height: 14),
-          SizedBox(height: 50, child: FilledButton.icon(onPressed: _submitForm, icon: const Icon(Icons.save_outlined), label: Text(widget.existingLog == null ? 'Save Daily Log' : 'Update Daily Log'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0E9F6E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: const TextStyle(fontWeight: FontWeight.w800)))),
+          SizedBox(height: 50, child: FilledButton.icon(onPressed: _submitForm, icon: const Icon(Icons.save_outlined), label: Text(_editing ? 'Update Daily Log' : 'Save Daily Log'), style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0E9F6E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: const TextStyle(fontWeight: FontWeight.w800)))),
           const SizedBox(height: 8),
           const Center(child: Text('One daily log per date • Backdated entries allowed', style: TextStyle(color: Color(0xFF7A8A82), fontSize: 10))),
         ]);
@@ -68,8 +106,8 @@ class _LogFormScreenState extends State<LogFormScreen> {
 
     if (widget.embedded) return content;
     return PoultryAppShell(
-      selectedIndex: 1,
-      title: widget.existingLog == null ? 'Add Daily Log' : 'Edit Daily Log',
+      selectedIndex: 2,
+      title: _editing ? 'Edit Daily Log' : 'Add Daily Log',
       subtitle: widget.existingLog == null ? 'Track daily flock data' : 'Update daily flock data',
       onBack: widget.embedded ? widget.onEmbeddedBack : () => Navigator.pop(context),
       onNavigate: _navigate,
@@ -78,7 +116,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
   }
 
   void _navigate(int index) {
-    if(index == 1) return;
+    if(index == 2) return;
     if (widget.embedded) {
       widget.onEmbeddedBack?.call();
     } else {
@@ -88,7 +126,9 @@ class _LogFormScreenState extends State<LogFormScreen> {
 
   Widget _dateHeader(bool wide) => AppCard(child: _datePickerTile());
 
-  Widget _datePickerTile() => InkWell(
+  Widget _datePickerTile() => Focus(
+    focusNode: _dateFocusNode,
+    child: InkWell(
     onTap: _pickDate,
     borderRadius: BorderRadius.circular(12),
     child: Container(
@@ -114,10 +154,10 @@ class _LogFormScreenState extends State<LogFormScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Earliest allowed: 27 Apr 2026',
+                  'Earliest allowed: ${DateFormat('dd MMM yyyy').format(context.read<PoultryProvider>().farmConfig.flockStartDate.add(const Duration(days: 1)))}',
                   style: TextStyle(
                     fontSize: 9,
-                    color: _selectedDate.isBefore(_minimumLogDate) ? Colors.red : const Color(0xFF789087),
+                    color: _selectedDate.isBefore(context.read<PoultryProvider>().farmConfig.flockStartDate.add(const Duration(days: 1))) ? Colors.red : const Color(0xFF789087),
                   ),
                 ),
               ],
@@ -127,7 +167,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
         ],
       ),
     ),
-  );
+  ));
 
   Widget _wideSections() => Column(children: [_flockProduction(), const SizedBox(height: 14), _consumption()]);
   Widget _narrowSections() => Column(children: [_flockProduction(), const SizedBox(height:14), _consumption()]);
@@ -140,80 +180,18 @@ class _LogFormScreenState extends State<LogFormScreen> {
   Widget _sectionHeader(String title,String subtitle,IconData icon,Color color)=>Row(children:[Container(width:36,height:36,decoration:BoxDecoration(color:color.withOpacity(.10),borderRadius:BorderRadius.circular(10)),child:Icon(icon,color:color,size:19)),const SizedBox(width:9),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800,color:Color(0xFF162A21))),Text(subtitle,style:const TextStyle(fontSize:9,color:Color(0xFF788A81)))]))]);
   Widget _iconBox(IconData icon,Color color)=>Container(width:38,height:38,decoration:BoxDecoration(color:color.withOpacity(.10),borderRadius:BorderRadius.circular(10)),child:Icon(icon,color:color,size:20));
 
-  int _previewStartingBirds() {
-    final provider = Provider.of<PoultryProvider>(context, listen: false);
-    final selected = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-    PoultryLog? previous;
-    for (final log in provider.logs) {
-      if (widget.existingLog != null &&
-          log.date.year == widget.existingLog!.date.year &&
-          log.date.month == widget.existingLog!.date.month &&
-          log.date.day == widget.existingLog!.date.day) continue;
-      final d = DateTime(log.date.year, log.date.month, log.date.day);
-      if (d.isBefore(selected) && (previous == null || d.isAfter(DateTime(previous!.date.year, previous!.date.month, previous!.date.day)))) {
-        previous = log;
-      }
-    }
-    return previous?.endingBirds ?? 5200;
-  }
-
-  Widget _calculatedPreview(bool wide) {
-    final starting = _previewStartingBirds();
-    final mortality = int.tryParse(_mortalityController.text) ?? 0;
-    final trays = double.tryParse(_traysController.text) ?? 0;
-    final feed = double.tryParse(_feedConsumedController.text) ?? 0;
-    final ending = (starting - mortality).clamp(0, 1000000000);
-    final eggs = (trays * 30).round();
-    final fcr = trays > 0 ? feed / trays : 0;
-    final laying = ending > 0 ? eggs / ending * 100 : 0;
-    return Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFFE5F6EC), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFCBE8D6))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _sectionHeader('Calculated Preview', 'Starting birds are calculated automatically', Icons.calculate_outlined, const Color(0xFF0E9F6E)),
-      const SizedBox(height: 12),
-      LayoutBuilder(builder: (context, c) {
-        final n = c.maxWidth >= 700 ? 4 : 2;
-        final w = (c.maxWidth - (n - 1) * 10) / n;
-        return Wrap(spacing: 10, runSpacing: 10, children: [
-          _preview('Starting Birds', '$starting', Icons.lock_outline),
-          _preview('Ending Birds', '$ending', Icons.pets_outlined),
-          _preview('Total Eggs', '$eggs', Icons.egg_alt_outlined),
-          _preview('FCR', fcr.toStringAsFixed(2), Icons.speed_outlined),
-          _preview('Laying %', '${laying.toStringAsFixed(1)}%', Icons.bar_chart_outlined),
-        ].map((x) => SizedBox(width: n == 4 ? (c.maxWidth - 30) / 4 : (c.maxWidth - 10) / 2, child: x)).toList());
-      }),
-    ]));
-  }
-  Widget _preview(String label, String value, IconData icon) => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFDDEAE1)),
-    ),
-    child: Row(
-      children: [
-        Icon(icon, color: const Color(0xFF0E9F6E), size: 19),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF6F8177))),
-              Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF142A20))),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final initial = _selectedDate.isBefore(_minimumLogDate) ? _minimumLogDate : (_selectedDate.isAfter(today) ? today : _selectedDate);
+    final provider = context.read<PoultryProvider>();
+    final minimumDate = provider.farmConfig.flockStartDate.add(const Duration(days: 1));
+    final initial = _selectedDate.isBefore(minimumDate)
+        ? minimumDate
+        : (_selectedDate.isAfter(today) ? today : _selectedDate);
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: _minimumLogDate,
+      firstDate: minimumDate,
       lastDate: today,
       helpText: 'SELECT DAILY LOG DATE',
       builder: (context, child) => Theme(
@@ -226,11 +204,19 @@ class _LogFormScreenState extends State<LogFormScreen> {
 
   Future<void> _submitForm() async {
     FocusScope.of(context).unfocus();
-    final normalized = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-    if (normalized.isBefore(_minimumLogDate)) { _show('Daily Log date cannot be before 27 Apr 2026.'); return; }
-    if (!_formKey.currentState!.validate()) return;
     final provider = context.read<PoultryProvider>();
-    final editing = widget.existingLog != null;
+    final normalized = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final minimumDate = provider.farmConfig.flockStartDate.add(const Duration(days: 1));
+    if (normalized.isBefore(minimumDate)) { _show('Daily Log date cannot be before ${DateFormat('dd MMM yyyy').format(minimumDate)}.'); return; }
+    if (!_formKey.currentState!.validate()) return;
+    final editing = _editing;
+    if (editing) {
+      final originalDate = DateTime(widget.existingLog!.date.year, widget.existingLog!.date.month, widget.existingLog!.date.day);
+      if (normalized != originalDate) {
+        _show('The date of an existing Daily Log cannot be changed. Create a new log for another date.');
+        return;
+      }
+    }
     final duplicate = provider.logs.any((l) {
       if (editing && l.date.year == widget.existingLog!.date.year && l.date.month == widget.existingLog!.date.month && l.date.day == widget.existingLog!.date.day) return false;
       final d = DateTime(l.date.year, l.date.month, l.date.day);
@@ -244,13 +230,10 @@ class _LogFormScreenState extends State<LogFormScreen> {
     final avgWeight = double.tryParse(_avgTrayWeightController.text) ?? 0;
     final grit = double.tryParse(_stoneGritConsumedController.text) ?? 0;
     final water = double.tryParse(_waterIntakeController.text) ?? 0;
-    // Starting birds and all calculated fields are intentionally hidden from the form.
-    // FirebaseService/PoultryCalculationService derives starting birds from the previous
-    // log or the 5200 opening flock when this is the first log.
-    final log = PoultryLog(date: normalized, startingBirds: 0, mortality: mortality, endingBirds: 0, trays: trays, totalEggs: 0, avgTrayWeight: avgWeight, feedConsumed: feed, stoneGritConsumed: grit, waterIntake: water, automatedFCR: 0, layingPercentage: 0);
+    final log = PoultryLog(date: normalized, mortality: mortality, trays: trays, totalEggs: 0, avgTrayWeight: avgWeight, feedConsumed: feed, stoneGritConsumed: grit, waterIntake: water , automatedFCR: 0);
     try {
       if (editing) { await provider.updateLog(log); } else { await provider.addLog(log); }
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) await _showSaveConfirmation();
     } catch(e) { if (mounted) _show('Error ${editing ? 'updating' : 'saving'} log: $e'); }
   }
   void _show(String message)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(message),behavior:SnackBarBehavior.floating));

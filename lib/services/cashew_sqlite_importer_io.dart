@@ -17,7 +17,7 @@ Future<List<Map<String, dynamic>>> parseCashewSqliteBytes(Uint8List bytes) async
       try {
         return CashewSqliteQueries.readTransactions(db);
       } finally {
-        db.close();
+        db.dispose();
       }
     } finally {
       try { await file.delete(); } catch (_) {}
@@ -43,6 +43,6 @@ List<Map<String, dynamic>> _readSqlScript(Uint8List bytes) {
     db.execute(text);
     return AppSqliteQueries.readTransactions(db);
   } finally {
-    db.close();
+    db.dispose();
   }
 }

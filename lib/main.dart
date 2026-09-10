@@ -5,10 +5,14 @@ import 'package:provider/provider.dart';
 
 import 'providers/poultry_provider.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/login_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await NotificationService.instance.initialize();
   runApp(const PoultryInventoryApp());
 }
 
@@ -51,8 +55,28 @@ class PoultryInventoryApp extends StatelessWidget {
             foregroundColor: Colors.white,
           ),
         ),
-        home: DashboardScreen(),
+        home: const AuthGate(),
       ),
+    );
+  }
+}
+
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return snapshot.data == null ? const LoginScreen() : const DashboardScreen();
+      },
     );
   }
 }

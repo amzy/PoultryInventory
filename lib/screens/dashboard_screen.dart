@@ -11,21 +11,15 @@ import 'log_form_screen.dart';
 import 'log_detail_screen.dart';
 import 'expense_sales_form_screen.dart';
 import 'settings_screen.dart';
+import 'reports_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  final int initialIndex;
-  const DashboardScreen({super.key, this.initialIndex = 0});
+  const DashboardScreen({super.key});
   @override State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  late int _selectedIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedIndex = widget.initialIndex.clamp(0, poultryNavItems.length - 1);
-  }
+  int _selectedIndex = 0;
 
   void _navigate(int index) {
     if (_selectedIndex == index) return;
@@ -34,25 +28,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _currentContent(PoultryProvider provider) {
     switch (_selectedIndex) {
-      case 1:
+      case 2:
         return LogFormScreen(
           embedded: true,
           onEmbeddedBack: () => _navigate(0),
           key: const ValueKey('daily-log'),
         );
-      case 2:
       case 3:
       case 4:
       case 5:
       case 6:
       case 7:
+      case 8:
         return ExpenseSalesFormScreen(
-          initialCategory: poultryNavItems[_selectedIndex].label.replaceAll(' ', '_'),
+          initialCategory: _selectedIndex == 8 ? 'Egg' : poultryNavItems[_selectedIndex].label.replaceAll(' ', '_'),
+          initialEggSale: _selectedIndex == 8,
           embedded: true,
           onEmbeddedBack: () => _navigate(0),
           key: ValueKey('expense-$_selectedIndex'),
         );
-      case 8:
+      case 1:
+        return const ReportsScreen(embedded: true, key: ValueKey('reports'));
+      case 9:
         return const SettingsScreen(embedded: true, key: ValueKey('settings'));
       default:
         return _dashboardBody(provider);
@@ -62,13 +59,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Consumer<PoultryProvider>(builder: (context, provider, _) {
-      final isExpense = _selectedIndex >= 2 && _selectedIndex <= 7;
+      final isExpense = _selectedIndex >= 3 && _selectedIndex <= 8;
       final category = isExpense ? poultryNavItems[_selectedIndex].label : '';
       return PoultryAppShell(
         selectedIndex: _selectedIndex,
         title: _pageTitle(category),
         subtitle: _pageSubtitle(),
-        trailing: _selectedIndex == 0 ? _syncButton(provider) : null,
+        trailing: null,
         onNavigate: _navigate,
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 260),
@@ -90,27 +87,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _pageTitle(String category) {
     if (_selectedIndex == 0) return 'Dashboard';
-    if (_selectedIndex == 1) return 'Add Daily Log';
-    if (_selectedIndex == 8) return 'Settings';
+    if (_selectedIndex == 1) return 'Reports';
+    if (_selectedIndex == 2) return 'Add Daily Log';
+    if (_selectedIndex == 9) return 'Settings';
     return 'Add ${category == 'Egg Sales' ? 'Egg Sales' : 'Expense'}';
   }
 
   String _pageSubtitle() {
     if (_selectedIndex == 0) return 'Overview of your poultry farm';
-    if (_selectedIndex == 1) return 'Track daily flock data';
-    if (_selectedIndex == 8) return 'App preferences and data tools';
+    if (_selectedIndex == 1) return 'Production, mortality and financial analysis';
+    if (_selectedIndex == 2) return 'Track daily flock data';
+    if (_selectedIndex == 9) return 'App preferences, data tools and administration';
     return 'Record farm financial activity';
   }
-
-  Widget _syncButton(PoultryProvider provider) => SizedBox(
-    height: 42,
-    child: FilledButton.icon(
-      onPressed: provider.isSigningIn ? null : provider.signInToGoogle,
-      icon: Icon(provider.isGoogleSignedIn ? Icons.cloud_done : Icons.login, size: 17),
-      label: Text(provider.isSigningIn ? 'Connecting…' : provider.isGoogleSignedIn ? 'Firebase Connected' : 'Sign in'),
-      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF087A4F), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11))),
-    ),
-  );
 
   Widget _dashboardBody(PoultryProvider provider) {
     return RefreshIndicator(
@@ -122,7 +111,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           padding: EdgeInsets.fromLTRB(wide ? 24 : 14, 8, wide ? 24 : 14, 28),
           children: [
             Row(children: [
-              const Spacer(),
+              Expanded(child: _flockPicker(provider)),
+              const SizedBox(width: 10),
               Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFDCE7E0))), child: Row(children: [const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF315B4A)), const SizedBox(width: 7), Text(_dateRange(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF29473A)))])),
             ]),
             const SizedBox(height: 12),
@@ -145,6 +135,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _flockPicker(PoultryProvider p) {
+    if (p.flocks.length <= 1) return AppCard(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Row(children: [const Icon(Icons.pets_outlined, size: 16, color: Color(0xFF087A4F)), const SizedBox(width: 7), Expanded(child: Text(p.activeFlock?.name ?? 'No flock configured', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)))]));
+    return AppCard(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3), child: DropdownButtonHideUnderline(child: DropdownButton<String>(isExpanded: true, value: p.activeFlockId.isEmpty ? null : p.activeFlockId, items: p.flocks.map((f) => DropdownMenuItem(value: f.id, child: Text('${f.name} • ${f.isActive ? 'Active' : 'Ended'}', overflow: TextOverflow.ellipsis))).toList(), onChanged: (id) { if (id != null) p.selectFlock(id); })));
+  }
+
   String _dateRange() {
     final now = DateTime.now();
     final start = now.subtract(const Duration(days: 6));
@@ -153,24 +148,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _metrics(PoultryProvider p, bool wide) {
     final items = [
-      ('Flock Age', '${FarmConfig.flockAgeOn(DateTime.now())} days', Icons.timelapse_outlined, const Color(0xFF7C3AED)),
-      ('Birds', '${p.totalBirds}', Icons.pets_outlined, const Color(0xFF0E9F6E)),
+      ('Flock Age', '${FarmConfig.flockAgeOnDate(DateTime.now(), startDate: p.farmConfig.flockStartDate)} days', Icons.timelapse_outlined, const Color(0xFF7C3AED)),
       ('Eggs', NumberFormat('#,##0').format(p.totalEggs), Icons.egg_alt_outlined, const Color(0xFFF59E0B)),
       ('Feed', '${p.totalFeedKg.toStringAsFixed(0)} kg', Icons.inventory_2_outlined, const Color(0xFF15803D)),
-      ('Grit', '${p.logs.fold<double>(0, (s, l) => s + l.stoneGritConsumed).toStringAsFixed(0)} kg', Icons.scatter_plot_outlined, const Color(0xFF9A6B22)),
+      ('Grit', _gritMetricValue(p), Icons.scatter_plot_outlined, const Color(0xFF9A6B22)),
       ('Expenses', _money(p.totalExpenses), Icons.monetization_on_outlined, const Color(0xFFEA580C)),
+      ('Laying %', '${p.latestLayingPercentage.toStringAsFixed(1)}%', Icons.show_chart_outlined, const Color(0xFF0E9F6E)),
     ];
     return LayoutBuilder(builder: (context, c) {
-      final count = wide ? 6 : c.maxWidth >= 800 ? 3 : c.maxWidth >= 650 ? 2 : 2;
+      final count = wide ? 3 : c.maxWidth >= 800 ? 2 : 1;
       final w = (c.maxWidth - (count - 1) * 10) / count;
-      return Wrap(spacing: 10, runSpacing: 10, children: items.map((e) => SizedBox(width: w, child: _metricCard(e.$1, e.$2, e.$3, e.$4))).toList());
+      return Wrap(spacing: 10, runSpacing: 10, children: [
+        SizedBox(width: w, child: _birdsCard(p)),
+        ...items.map((e) => SizedBox(width: w, child: _metricCard(e.$1, e.$2, e.$3, e.$4, onTap: e.$1 == 'Laying %' ? () => _navigate(0) : null))),
+      ]);
     });
   }
 
-  Widget _metricCard(String label, String value, IconData icon, Color color) => AppCard(
+  String _gritMetricValue(PoultryProvider p) {
+    final grit = p.logs.fold<double>(0, (sum, log) => sum + log.stoneGritConsumed);
+    final feed = p.logs.fold<double>(0, (sum, log) => sum + log.feedConsumed);
+    final percentage = feed > 0 ? (grit / feed) * 100 : 0.0;
+    return '${grit.toStringAsFixed(0)} kg • ${percentage.toStringAsFixed(2)}% of feed';
+  }
+
+  String _birdsTitle(PoultryProvider p) {
+    final breedName = p.farmConfig.breedName.trim();
+    return breedName.isEmpty ? 'Birds' : '$breedName Birds';
+  }
+
+  Widget _birdsCard(PoultryProvider p) => AppCard(
+    padding: const EdgeInsets.all(14),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        ClipRRect(borderRadius: BorderRadius.circular(11), child: Image.asset('assets/app_icons/app_logo.png', width: 40, height: 40, fit: BoxFit.cover)),
+        const SizedBox(width: 10),
+        Text(_birdsTitle(p), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(child: _birdStat('Starting (Day 0)', NumberFormat('#,##0').format(p.startingBirdsAtDayZero))),
+        Expanded(child: _birdStat('Current Alive', NumberFormat('#,##0').format(p.totalBirds))),
+        Expanded(child: _birdStat('Mortality', '${p.mortalityPercentage.toStringAsFixed(2)}%')),
+      ]),
+    ]),
+  );
+
+  Widget _birdStat(String label, String value) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF12251D))),
+    const SizedBox(height: 2),
+    Text(label, style: const TextStyle(fontSize: 9, color: Color(0xFF6A7D73)), maxLines: 2),
+  ]);
+
+  Widget _metricCard(String label, String value, IconData icon, Color color, {VoidCallback? onTap}) => InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap, child: AppCard(
     padding: const EdgeInsets.all(14),
     child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: color.withOpacity(.11), borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: color, size: 22)), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(value, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Color(0xFF12251D))), const SizedBox(height: 2), Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6A7D73)))]))]),
-  );
+  ));
 
   Widget _eggProduction(PoultryProvider p) => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const Text('Egg Production', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
@@ -274,7 +307,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _accountSummary(PoultryProvider p) {
     final names = <String>{
-      ...ExpenseCategoryConfig.accounts,
+      ...ExpenseCategoryConfig.activeAccounts,
       ...p.expenseRecords.map((e) => e.account.trim()).where((e) => e.isNotEmpty),
     }.toList()..sort();
 
@@ -351,25 +384,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Row(children: [const Expanded(child: Text('Recent Daily Logs', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D)))), TextButton(onPressed: p.logs.isEmpty ? null : () {}, child: const Text('View All'))]),
     const SizedBox(height: 4),
     if (p.logs.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('No daily log records found.', style: TextStyle(color: Color(0xFF7B8C84)))))
-    else LayoutBuilder(builder: (context, c) => c.maxWidth >= 800 ? _logTable(p) : Column(children: p.logs.take(5).map((log) => _logRow(log)).toList())),
+    else LayoutBuilder(builder: (context, c) => c.maxWidth >= 800 ? _logTable(p) : Column(children: p.logs.take(5).map((log) => _logRow(p, log)).toList())),
   ]));
 
   Widget _logTable(PoultryProvider p) => Column(children: [
     _tableHeader(),
-    ...p.logs.take(5).map((log) => InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LogDetailScreen(log: log))), child: Container(padding: const EdgeInsets.symmetric(vertical: 12), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE6EEE9)))), child: Row(children: [_cell(DateFormat('MMM d, yyyy').format(log.date), 1.2), _cell('${log.startingBirds}', 1), _cell('${log.mortality}', .8), _cell('${log.endingBirds}', 1), _cell('${log.totalEggs}', 1), _cell('${log.feedConsumed.toStringAsFixed(0)}', 1), _cell(log.automatedFCR.toStringAsFixed(2), .8), _cell('${log.layingPercentage.toStringAsFixed(1)}%', 1)]))))
+    ...p.logs.take(5).map((log) => InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LogDetailScreen(log: log))), child: Container(padding: const EdgeInsets.symmetric(vertical: 12), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE6EEE9)))), child: Row(children: [_cell(DateFormat('MMM d, yyyy').format(log.date), 1.2), _cell('${log.mortality}', .9), _cell('${log.totalEggs}', 1), _cell('${log.feedConsumed.toStringAsFixed(0)}', 1), _cell(log.automatedFCR.toStringAsFixed(2), .8)]))))
   ]);
 
-  Widget _tableHeader() => Container(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: ['Date','Starting Birds','Mortality','Ending Birds','Total Eggs','Feed (kg)','FCR','Laying %'].map((x) => _cell(x, x == 'Date' ? 1.2 : 1, header: true)).toList()));
+  Widget _tableHeader() => Container(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: ['Date','Mortality','Total Eggs','Feed (kg)','FCR'].map((x) => _cell(x, x == 'Date' ? 1.2 : 1, header: true)).toList()));
   Widget _cell(String text, double flex, {bool header = false}) => Expanded(flex: (flex * 10).round(), child: Text(text, style: TextStyle(fontSize: header ? 10 : 11, color: header ? const Color(0xFF63766C) : const Color(0xFF253B31), fontWeight: header ? FontWeight.w700 : FontWeight.w600), overflow: TextOverflow.ellipsis));
 
-  Widget _logRow(dynamic log) => Container(margin: const EdgeInsets.only(top: 7), decoration: BoxDecoration(color: const Color(0xFFF7FAF8), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFE1EAE5))), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LogDetailScreen(log: log))), dense: true, leading: Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFFE7F5EE), borderRadius: BorderRadius.circular(9)), child: const Icon(Icons.calendar_month_outlined, color: Color(0xFF0E9F6E), size: 18)), title: Text(DateFormat('dd MMM yyyy').format(log.date), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), subtitle: Text('Age ${log.flockAge}d  •  ${log.totalEggs} eggs  •  ${log.endingBirds} birds', style: const TextStyle(fontSize: 10, color: Color(0xFF71837A))), trailing: Text('${log.layingPercentage.toStringAsFixed(1)}%', style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w800))));
+  Widget _logRow(PoultryProvider p, dynamic log) => Container(margin: const EdgeInsets.only(top: 7), decoration: BoxDecoration(color: const Color(0xFFF7FAF8), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFE1EAE5))), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LogDetailScreen(log: log))), dense: true, leading: Container(width: 34, height: 34, decoration: BoxDecoration(color: const Color(0xFFE7F5EE), borderRadius: BorderRadius.circular(9)), child: const Icon(Icons.calendar_month_outlined, color: Color(0xFF0E9F6E), size: 18)), title: Text(DateFormat('dd MMM yyyy').format(log.date), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), subtitle: Text('Age ${log.flockAge}d  •  ${log.mortality} mortality  •  ${log.totalEggs} eggs', style: const TextStyle(fontSize: 10, color: Color(0xFF71837A))), trailing: Text('${p.layingPercentageFor(log).toStringAsFixed(1)}%', style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w800))));
 
   Widget _quickActions() => LayoutBuilder(builder: (context, c) {
     final actions = [
-      ('Add Daily Log', 'Record today’s data', Icons.calendar_month_outlined, const Color(0xFF0E9F6E), 1),
+      ('Add Daily Log', 'Record today’s data', Icons.calendar_month_outlined, const Color(0xFF0E9F6E), 2),
       ('Add Expense', 'Track expenses', Icons.payments_outlined, const Color(0xFFF59E0B), 3),
-      ('Add Egg Sales', 'Record egg sales', Icons.egg_alt_outlined, const Color(0xFFF97316), 6),
-      ('View Reports', 'Growth & analytics', Icons.bar_chart_outlined, const Color(0xFF0E9F6E), 0),
+      ('Add Egg Sales', 'Record egg sales', Icons.egg_alt_outlined, const Color(0xFFF97316), 8),
+      ('View Reports', 'Growth & analytics', Icons.bar_chart_outlined, const Color(0xFF0E9F6E), 1),
     ];
     final w = (c.maxWidth - 30) / 4;
     return Wrap(spacing: 10, runSpacing: 10, children: actions.map((a) => SizedBox(width: c.maxWidth < 650 ? (c.maxWidth - 10) / 2 : w, child: InkWell(onTap: () => _navigate(a.$5), child: AppCard(padding: const EdgeInsets.all(12), child: Row(children: [Container(width: 34, height: 34, decoration: BoxDecoration(color: a.$4.withOpacity(.11), borderRadius: BorderRadius.circular(9)), child: Icon(a.$3, color: a.$4, size: 19)), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(a.$1, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)), Text(a.$2, style: const TextStyle(fontSize: 9, color: Color(0xFF75867D)))]))]))))).toList());

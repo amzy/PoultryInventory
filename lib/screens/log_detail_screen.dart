@@ -33,16 +33,15 @@ class LogDetailScreen extends StatelessWidget {
           const SizedBox(height: 14),
           _section('Flock', Icons.pets, [
             _value('Date', DateFormat('dd MMM yyyy').format(log.date)),
-            _value('Starting Birds', '${log.startingBirds}'),
             _value('Mortality', '${log.mortality}'),
-            _value('Ending Birds', '${log.endingBirds}'),
+            if (log.createdByName != null) _value('Added by', log.createdByName!),
+            if (log.updatedByName != null) _value('Last updated by', log.updatedByName!),
           ]),
           const SizedBox(height: 12),
           _section('Production', Icons.egg_alt, [
             _value('Trays', _number(log.trays)),
             _value('Total Eggs', '${log.totalEggs}'),
             _value('Avg Tray Weight', '${_number(log.avgTrayWeight)} g'),
-            _value('Laying Percentage', '${log.layingPercentage.toStringAsFixed(1)}%'),
           ]),
           const SizedBox(height: 12),
           _section('Consumption', Icons.local_dining_outlined, [
@@ -86,7 +85,7 @@ class LogDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${log.totalEggs} eggs  •  ${log.endingBirds} ending birds',
+                  '${log.totalEggs} eggs  •  ${log.mortality} mortality',
                   style: const TextStyle(color: Colors.white60, fontSize: 12),
                 ),
               ],

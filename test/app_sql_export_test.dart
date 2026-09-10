@@ -19,6 +19,9 @@ void main() {
         unit: 'rupees',
         quantity: 0,
         transactionType: 'expense',
+        feedItems: const [
+          {'name': 'LCC (Starter)', 'quantity': 4.0, 'pricePerBag': 2500.0, 'bagWeightKg': 50, 'total': 10000.0},
+        ],
       ),
       ExpenseSalesLog(
         id: 'cashew_42',
@@ -48,8 +51,10 @@ void main() {
       expect(imported[1]['description'], "Farmer's feed");
       expect(imported[1]['amount'], 12500.50);
       expect(imported[1]['source'], 'poultry_inventory_export');
+      expect(imported[1]['feedItems'], isA<List<Map<String, dynamic>>>());
+      expect(imported[1]['feedItems'], hasLength(1));
     } finally {
-      db.close();
+      db.dispose();
     }
   });
 }

@@ -1,0 +1,11 @@
+{
+  "name": "poultry-inventory-firestore-migrations",
+  "private": true,
+  "description": "One-time administrative Firestore migrations for Poultry Inventory",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.5.0"
+  }
+}

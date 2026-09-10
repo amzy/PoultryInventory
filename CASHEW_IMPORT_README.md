@@ -43,7 +43,7 @@ Cashew source mappings include:
 - Healthcare → Chiks / Medical
 - Vaccine → corresponding main category / Vaccine
 - Construction Labor → Renovation / Labor
-- Construction Materials → Renovation / Materials
+- Construction Materials → Renovation / Material
 - Steel Labor → Renovation / Labor
 - Material → Augar Work / Material
 - Labor work → Augar Work / Labor
@@ -71,3 +71,19 @@ The SQLite WASM runtime must exist at `web/sqlite3.wasm` for browser imports. Ru
 ```
 
 before building the web app.
+
+
+## Flock-aware backup and import
+
+Financial SQL export is always generated from the currently selected flock. The
+export includes flock metadata in SQL comments (`Flock ID`, `Flock Name`, and
+`Breed`) while transaction rows remain portable.
+
+A Cashew SQLite/SQL import is written into the currently selected flock only.
+Imported source accounts are preserved and added to that flock's account list
+when they are not already configured. Re-importing the same Cashew source uses
+deterministic `cashew_<transactionId>` document IDs, so it updates changed
+transactions instead of creating duplicates.
+
+Normal Cashew imports are attributed to the currently signed-in administrator;
+there is no hard-coded Amzad administrator UID in the runtime import path.

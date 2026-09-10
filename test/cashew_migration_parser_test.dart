@@ -119,4 +119,55 @@ void main() {
     expect(records.single['income'], true);
     expect(records.single['account'], 'Amzad Khan');
   });
+
+  test('converts legacy Egg_Sales into Egg credit', () {
+    final records = CashewMigrationParser.parse({
+      'records': [
+        {
+          'transactionId': 'legacy-egg-sale',
+          'date': '2026-09-01',
+          'mainCategory': 'Layer Bird',
+          'category': 'Egg_Sales',
+          'amount': 3000,
+          'freightCharge': 700,
+          'transactionType': 'expense',
+          'account': 'Amzad Khan',
+        },
+      ],
+    });
+
+    expect(records.single['category'], 'Egg');
+    expect(records.single['originalCategory'], 'Egg_Sales');
+    expect(records.single['transactionType'], 'credit');
+    expect(records.single['income'], true);
+    expect(records.single['freightCharge'], 0.0);
+  });
+
+  test('converts legacy Materials into Material', () {
+    final records = CashewMigrationParser.parse({
+      'records': [
+        {
+          'transactionId': 'legacy-material',
+          'date': '2026-09-02',
+          'mainCategory': 'Renovation',
+          'category': 'Materials',
+          'amount': 1500,
+          'account': 'Amzad Khan',
+        },
+        {
+          'transactionId': 'canonical-material',
+          'date': '2026-09-03',
+          'mainCategory': 'Renovation',
+          'category': 'Material',
+          'amount': 500,
+          'account': 'Amzad Khan',
+        },
+      ],
+    });
+
+    expect(records[0]['category'], 'Material');
+    expect(records[0]['originalCategory'], 'Materials');
+    expect(records[1]['category'], 'Material');
+  });
+
 }

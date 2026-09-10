@@ -2,205 +2,200 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function signedIn(userId) {
-      return request.auth != null && request.auth.uid == userId;
-    }
+    function signedIn() { return request.auth != null; }
+    function userId() { return request.auth.uid; }
+    function userEmail() { return request.auth.token.email; }
+    function userProfile(uid) { return /databases/$(database)/documents/users/$(uid)/profile/account; }
+    function appConfig() { return /databases/$(database)/documents/app/config; }
+    function isAdmin() { return signedIn() && exists(userProfile(userId())) && get(userProfile(userId())).data.role == 'admin'; }
+    function flockMember(flockId, uid) { return /databases/$(database)/documents/flocks/$(flockId)/members/$(uid); }
+    function isFlockMember(flockId) { return signedIn() && exists(flockMember(flockId, userId())); }
+    function isFlockAdmin(flockId) { return isFlockMember(flockId) && get(flockMember(flockId, userId())).data.role == 'admin'; }
 
     function dailyLogShape(data) {
       return data.keys().hasOnly([
-        'date', 'dateKey', 'startingBirds', 'mortality',
-        'endingBirds', 'trays', 'totalEggs', 'avgTrayWeight',
-        'feedConsumed', 'stoneGritConsumed', 'waterIntake',
-        'automatedFCR', 'layingPercentage', 'previousDateKey',
-        'previousEndingBirds', 'updatedAt'
+        'date','dateKey','mortality','trays','totalEggs','avgTrayWeight','feedConsumed','stoneGritConsumed','waterIntake','automatedFCR',
+        'createdByUid','createdByName','createdAt','updatedByUid','updatedByName','updatedAt'
       ])
-      && data.date is timestamp
-      && data.dateKey is string
-      && data.startingBirds is int
-      && data.mortality is int
-      && data.endingBirds is int
-      && data.trays is number
-      && data.totalEggs is int
-      && data.avgTrayWeight is number
-      && data.feedConsumed is number
-      && data.stoneGritConsumed is number
-      && data.waterIntake is number
-      && data.automatedFCR is number
-      && data.layingPercentage is number
-      && data.previousDateKey is string
-      && data.previousEndingBirds is int
+      && data.date is timestamp && data.dateKey is string && data.mortality is int && data.trays is number
+      && data.totalEggs is int && data.avgTrayWeight is number && data.feedConsumed is number
+      && data.stoneGritConsumed is number && data.waterIntake is number && data.automatedFCR is number
+      && (!('createdByUid' in data) || data.createdByUid is string)
+      && (!('createdByName' in data) || data.createdByName is string)
+      && (!('createdAt' in data) || data.createdAt is timestamp)
+      && (!('updatedByUid' in data) || data.updatedByUid is string)
+      && (!('updatedByName' in data) || data.updatedByName is string)
       && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
-
-    function dailyLogValues(data) {
-      return data.dateKey >= '2026-04-27'
-      && data.startingBirds >= 0
-      && data.mortality >= 0
-      && data.mortality <= data.startingBirds
-      && data.endingBirds == data.startingBirds - data.mortality
-      && data.trays >= 0
-      && data.totalEggs >= 0
-      // Flutter uses round(trays * 30). This range validates the rounded value.
-      && data.totalEggs >= data.trays * 30 - 0.5
-      && data.totalEggs < data.trays * 30 + 0.5
-      && data.avgTrayWeight >= 0
-      && data.feedConsumed >= 0
-      && data.stoneGritConsumed >= 0
-      && data.waterIntake >= 0
-      && data.automatedFCR >= 0
-      && data.layingPercentage >= 0
-      // Allow a tiny floating-point tolerance for client-side division.
-      && (
-        (data.trays == 0 && data.automatedFCR == 0)
-        || (data.trays > 0
-          && data.automatedFCR >= data.feedConsumed / data.trays - 0.000001
-          && data.automatedFCR <= data.feedConsumed / data.trays + 0.000001)
-      )
-      && (
-        (data.endingBirds == 0 && data.layingPercentage == 0)
-        || (data.endingBirds > 0
-          && data.layingPercentage >= data.totalEggs / data.endingBirds * 100 - 0.000001
-          && data.layingPercentage <= data.totalEggs / data.endingBirds * 100 + 0.000001)
-      );
+    function dailyLogValues(data, flockId) {
+      return data.date > get(/databases/$(database)/documents/flocks/$(flockId)).data.startDate && data.mortality >= 0 && data.trays >= 0 && data.totalEggs >= 0
+      && data.totalEggs >= data.trays * 30 - 0.5 && data.totalEggs < data.trays * 30 + 0.5
+      && data.avgTrayWeight >= 0 && data.feedConsumed >= 0 && data.stoneGritConsumed >= 0 && data.waterIntake >= 0 && data.automatedFCR >= 0;
     }
-
-    function dailyChainValid(userId, data) {
-      // The very first Daily Log bootstraps the flock from the configured
-      // opening count. After that every log must reference the immediately
-      // previous log in the bird-count chain.
-      return (
-        data.previousDateKey == 'datetime_bootstrap'
-        && data.startingBirds == 5200
-        && data.previousEndingBirds == 0
-        && getAfter(
-          /databases/$(database)/documents/users/$(userId)/settings/farm
-        ).data.initialized == true
-        && getAfter(
-          /databases/$(database)/documents/users/$(userId)/settings/farm
-        ).data.openingBirds == 5200
-        && getAfter(
-          /databases/$(database)/documents/users/$(userId)/settings/farm
-        ).data.firstLogDateKey == data.dateKey
-      ) || (
-        data.previousDateKey != ''
-        && data.previousDateKey < data.dateKey
-        && data.previousEndingBirds >= 0
-        && data.startingBirds == data.previousEndingBirds
-        && getAfter(
-          /databases/$(database)/documents/users/$(userId)/daily_logs/$(data.previousDateKey)
-        ).data.endingBirds == data.previousEndingBirds
-      );
-    }
-
-    function dailyLogValid(userId, data) {
-      return dailyLogShape(data)
-        && dailyLogValues(data)
-        && dailyChainValid(userId, data);
-    }
+    function dailyLogValid(data, flockId) { return dailyLogShape(data) && dailyLogValues(data, flockId); }
 
     function expenseShape(data) {
       return data.keys().hasOnly([
-        'date', 'dateKey', 'mainCategory', 'category', 'originalCategory', 'account', 'description',
-        'amount', 'unitPrice', 'freightCharge', 'pricingCalculated', 'medicalItems', 'unit', 'quantity', 'transactionType', 'createdAt'
+        'date','dateKey','mainCategory','category','originalCategory','account','description','supplierId','supplierName','amount','unitPrice','freightCharge','pricingCalculated','medicalItems','feedItems',
+        'createdByUid','createdByName','updatedByUid','updatedByName','unit','quantity','transactionType','createdAt','updatedAt'
       ])
-      && data.date is timestamp
-      && data.dateKey is string
-      && data.mainCategory is string
-      && data.category is string
-      && data.originalCategory is string
-      && data.account is string
-      && data.description is string
-      && data.amount is number
-      && data.unitPrice is number
-      && data.freightCharge is number
-      && data.pricingCalculated is bool
-      && (!data.keys().hasAll(['medicalItems']) || data.medicalItems is list)
-      && data.unit is string
-      && data.quantity is number
-      && data.transactionType is string
-      && data.transactionType in ['expense', 'credit']
-      && data.createdAt is timestamp;
+      && data.date is timestamp && data.dateKey is string && data.mainCategory is string && data.category is string && data.originalCategory is string
+      && data.account is string && data.description is string
+      && (!('supplierId' in data) || data.supplierId is string) && (!('supplierName' in data) || data.supplierName is string)
+      && data.amount is number && data.unitPrice is number && data.freightCharge is number && data.pricingCalculated is bool
+      && (!data.keys().hasAll(['medicalItems']) || data.medicalItems is list) && (!data.keys().hasAll(['feedItems']) || data.feedItems is list)
+      && (!('createdByUid' in data) || data.createdByUid is string) && (!('createdByName' in data) || data.createdByName is string)
+      && (!('updatedByUid' in data) || data.updatedByUid is string) && (!('updatedByName' in data) || data.updatedByName is string)
+      && (!('updatedAt' in data) || data.updatedAt is timestamp) && data.unit is string && data.quantity is number
+      && data.transactionType is string && data.transactionType in ['expense','credit'] && data.createdAt is timestamp;
     }
-
     function expenseCategoryValid(data) {
-      return (data.mainCategory == 'Layer Bird' && data.category in [
-        'Feed', 'Medical', 'Vaccine', 'Tray', 'Egg', 'Electricity', 'Grit', 'Other Expenses'
-      ])
-      || (data.mainCategory == 'Chiks' && data.category in [
-        'Feed', 'Vaccine', 'Medical', 'Preparation', 'Water', 'Other Expenses'
-      ])
-      || (data.mainCategory == 'Renovation' && data.category in [
-        'Labor', 'Materials', 'Other Expenses'
-      ])
-      || (data.mainCategory == 'Augar Work' && data.category in [
-        'Labor', 'Material', 'Other Expenses'
-      ]);
+      // Main categories remain controlled by the financial model. Subcategories
+      // are global master data and therefore are intentionally not bound to a
+      // particular main category.
+      return data.mainCategory in ['Layer Bird','Chiks','Renovation','Augar Work']
+        && data.category is string && data.category.size() > 0;
     }
-
     function expenseValues(data) {
-      return data.mainCategory.size() > 0
-      && data.category.size() > 0
-      && expenseCategoryValid(data)
-      && data.amount >= 0
-      && data.unitPrice >= 0
-      && data.freightCharge >= 0
-      && data.quantity >= 0
-      && (!data.pricingCalculated || (data.category in ['Feed', 'Grit', 'Tray'] && data.amount >= data.quantity * data.unitPrice - 0.01 && data.amount <= data.quantity * data.unitPrice + 0.01))
-      && data.mainCategory.size() <= 80
-      && data.category.size() <= 120
-      && data.originalCategory.size() <= 120
-      && data.account.size() <= 80
-      && data.description.size() <= 500
-      && data.unit.size() <= 30;
+      return data.mainCategory.size() > 0 && data.category.size() > 0 && expenseCategoryValid(data) && data.amount >= 0 && data.unitPrice >= 0 && data.freightCharge >= 0 && data.quantity >= 0
+      && (!data.pricingCalculated || (data.category in ['Feed','Grit','Tray'] && data.amount >= data.quantity * data.unitPrice - 0.01 && data.amount <= data.quantity * data.unitPrice + 0.01))
+      && data.mainCategory.size() <= 80 && data.category.size() <= 120 && data.originalCategory.size() <= 120 && data.account.size() <= 80 && data.description.size() <= 500 && data.unit.size() <= 30;
     }
 
-    match /users/{userId} {
-      allow read, write: if false;
+    match /feed_catalog/{docId} {
+      allow read: if signedIn() && docId == 'global';
+      allow create, update, delete: if isAdmin() && docId == 'global';
+    }
 
-      match /settings/{settingId} {
-        allow read: if signedIn(userId);
-        allow create: if signedIn(userId)
-          && settingId == 'farm'
-          && request.resource.data.keys().hasOnly(['initialized', 'openingBirds', 'firstLogDateKey'])
-          && request.resource.data.initialized == true
-          && request.resource.data.openingBirds == 5200
-          && request.resource.data.firstLogDateKey is string
-          && request.resource.data.firstLogDateKey >= '2026-04-27';
-        allow update, delete: if false;
-      }
+    match /expense_subcategories/{docId} {
+      allow read: if signedIn() && docId == 'global';
+      allow create, update, delete: if isAdmin() && docId == 'global';
+    }
 
-      match /daily_logs/{logId} {
-        allow read: if signedIn(userId);
-        allow create: if signedIn(userId)
-          && request.resource.data.dateKey == logId
-          && dailyLogValid(userId, request.resource.data);
+    match /suppliers/{supplierId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
 
-        allow update: if signedIn(userId)
-          && request.resource.data.dateKey == logId
-          && request.resource.data.dateKey == resource.data.dateKey
-          && dailyLogValid(userId, request.resource.data);
+    match /app/{docId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && docId == 'config' && !exists(appConfig()) && request.resource.data.ownerUid == userId();
+      allow update, delete: if isAdmin();
+    }
 
-        // Daily Logs are intentionally not client-deletable. A delete would
-        // break the bird-count chain and should be handled by a future admin
-        // migration tool if needed.
+    match /users/{uid} {
+      allow read: if signedIn() && userId() == uid;
+      allow create: if false;
+      allow update: if signedIn() && userId() == uid && isAdmin() && request.resource.data.role in ['admin','member'];
+      allow delete: if false;
+
+      match /profile/{profileId} {
+        allow read: if signedIn() && (userId() == uid || isAdmin());
+        allow create: if signedIn()
+          && userId() == uid
+          && profileId == 'account'
+          && !exists(userProfile(uid))
+          && request.resource.data.role in ['admin','member']
+          && request.resource.data.email == userEmail()
+          && request.resource.data.displayName is string
+          && request.resource.data.mobileNumber is string
+          && request.resource.data.displayName.size() >= 2
+          && request.resource.data.displayName.size() <= 100
+          && request.resource.data.mobileNumber.size() >= 8
+          && request.resource.data.mobileNumber.size() <= 20
+          && (!('avatarBase64' in request.resource.data) || (request.resource.data.avatarBase64 is string && request.resource.data.avatarBase64.size() <= 950000));
+        allow update: if signedIn() && userId() == uid && profileId == 'account'
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.email == userEmail()
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() >= 2
+          && request.resource.data.displayName.size() <= 100
+          && request.resource.data.mobileNumber is string
+          && request.resource.data.mobileNumber.size() >= 8
+          && request.resource.data.mobileNumber.size() <= 20
+          && (!('age' in request.resource.data) || (request.resource.data.age is int && request.resource.data.age >= 1 && request.resource.data.age <= 120))
+          && (!('avatarBase64' in request.resource.data) || (request.resource.data.avatarBase64 is string && request.resource.data.avatarBase64.size() <= 950000));
         allow delete: if false;
       }
 
+      match /flock_memberships/{flockId} {
+        allow read: if signedIn() && userId() == uid;
+        allow create, update: if signedIn() && ((userId() == uid && (isAdmin() || exists(/databases/$(database)/documents/flocks/$(flockId)/invitations/$(request.auth.token.email)))) || isFlockAdmin(flockId));
+        allow delete: if signedIn() && (userId() == uid || isFlockAdmin(flockId));
+      }
+
+      match /devices/{deviceId} {
+        allow read: if signedIn() && userId() == uid;
+        allow create, update, delete: if signedIn() && userId() == uid;
+      }
+
+      match /settings/{settingId} {
+        allow read: if signedIn() && userId() == uid;
+        allow write: if false;
+      }
+      match /daily_logs/{logId} {
+        allow read: if signedIn() && userId() == uid;
+        allow write: if false;
+      }
       match /expense_records/{recordId} {
-        allow read: if signedIn(userId);
-        allow create: if signedIn(userId)
-          && expenseShape(request.resource.data)
-          && expenseValues(request.resource.data);
-        allow update: if signedIn(userId)
-          && expenseShape(request.resource.data)
-          && expenseValues(request.resource.data)
-          && request.resource.data.createdAt == resource.data.createdAt;
-        allow delete: if signedIn(userId);
+        allow read: if signedIn() && userId() == uid;
+        allow write: if false;
       }
     }
 
-    // No wildcard catch-all: new collections are denied until explicitly
-    // secured here. This prevents accidental exposure of future data.
+    match /flocks/{flockId} {
+      allow read: if isFlockMember(flockId) || isAdmin();
+      allow create: if isAdmin();
+      allow update: if isFlockAdmin(flockId) || isAdmin();
+      allow delete: if false;
+
+      match /migration/{migrationId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /members/{memberUid} {
+        allow read: if isFlockMember(flockId) || isAdmin();
+        allow create: if isFlockAdmin(flockId) || (isAdmin() && memberUid == userId()) || (signedIn() && memberUid == userId() && exists(/databases/$(database)/documents/flocks/$(flockId)/invitations/$(request.auth.token.email)));
+        allow update: if isFlockAdmin(flockId) || (isAdmin() && memberUid == userId()) || (signedIn() && memberUid == userId());
+        allow delete: if isFlockAdmin(flockId) && memberUid != userId();
+      }
+
+      match /invitations/{inviteId} {
+        allow read: if isFlockAdmin(flockId) || (signedIn() && resource.data.email == userEmail());
+        allow create: if isFlockAdmin(flockId) && request.resource.data.email is string && request.resource.data.status == 'pending';
+        allow update: if (isFlockAdmin(flockId)) || (signedIn() && resource.data.email == userEmail() && request.resource.data.status == 'accepted');
+        allow delete: if isFlockAdmin(flockId);
+      }
+
+      match /daily_logs/{logId} {
+        allow read: if isFlockMember(flockId) || isAdmin();
+        allow create: if (isFlockMember(flockId) || isAdmin()) && request.resource.data.dateKey == logId && dailyLogValid(request.resource.data, flockId);
+        allow update: if (isFlockMember(flockId) || isAdmin()) && request.resource.data.dateKey == logId && request.resource.data.dateKey == resource.data.dateKey && dailyLogValid(request.resource.data, flockId);
+        allow delete: if false;
+      }
+
+      match /notification_settings/{settingId} {
+        allow read: if isFlockMember(flockId);
+        allow write: if isFlockAdmin(flockId);
+      }
+
+      match /notification_templates/{templateId} {
+        allow read: if isFlockMember(flockId);
+        allow write: if isFlockAdmin(flockId);
+      }
+
+      match /notification_requests/{requestId} {
+        allow read: if isFlockAdmin(flockId);
+        allow create: if isFlockAdmin(flockId);
+        allow update, delete: if false;
+      }
+
+      match /expense_records/{recordId} {
+        allow read: if isFlockMember(flockId) || isAdmin();
+        allow create: if (isFlockMember(flockId) || isAdmin()) && expenseShape(request.resource.data) && expenseValues(request.resource.data);
+        allow update: if (isFlockMember(flockId) || isAdmin()) && expenseShape(request.resource.data) && expenseValues(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isFlockMember(flockId) || isAdmin();
+      }
+    }
   }
 }
