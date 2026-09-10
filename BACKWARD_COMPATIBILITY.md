@@ -5,7 +5,7 @@ This version keeps existing Firestore records readable and editable without requ
 ## Daily Logs
 - Legacy `startingBirds`, `endingBirds`, `previousDateKey`, `previousEndingBirds`, and `layingPercentage` fields are ignored on read.
 - Existing logs open in the current Daily Log form.
-- Saving an existing log rewrites it to the current Daily Log structure and recalculates total eggs/FCR from the current inputs.
+- Saving an existing log rewrites it to the current Daily Log structure and recalculates total eggs and egg-mass FCR from the current inputs.
 - The original log date cannot be changed during edit because Daily Log document IDs are date-based.
 
 ## Expenses

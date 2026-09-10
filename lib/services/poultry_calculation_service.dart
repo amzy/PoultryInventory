@@ -24,7 +24,8 @@ class PoultryCalculationService {
     }
 
     final eggs = (input.trays * eggsPerTray).round();
-    final fcr = input.trays > 0 ? input.feedConsumed / input.trays : 0.0;
+    final eggMassKg = input.trays * input.avgTrayWeight / 1000.0;
+    final fcr = eggMassKg > 0 ? input.feedConsumed / eggMassKg : 0.0;
 
     return input.copyWith(
       totalEggs: eggs,

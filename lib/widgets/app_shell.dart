@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../providers/poultry_provider.dart';
 import '../screens/profile_screen.dart';
 
@@ -22,6 +23,7 @@ const poultryNavItems = <AppNavItem>[
   AppNavItem('Tray', 'Track tray purchases', Icons.inventory_2_outlined, Color(0xFF0EA5A4)),
   AppNavItem('Other Expenses', 'Record other expenses', Icons.folder_outlined, Color(0xFF7C3AED)),
   AppNavItem('Egg Sales', 'Track egg sales', Icons.egg_alt_outlined, Color(0xFFF97316)),
+  AppNavItem('Suppliers', 'Supplier directory', Icons.local_shipping_outlined, Color(0xFF0EA5A4)),
   AppNavItem('Settings', 'App preferences', Icons.settings_outlined, Color(0xFF64748B)),
 ];
 
@@ -33,7 +35,8 @@ class PoultryAppShell extends StatelessWidget {
   final VoidCallback? onBack;
   final void Function(int index)? onNavigate;
   final Widget? trailing;
-
+  final Widget? headerOverride;
+  
   const PoultryAppShell({
     super.key,
     required this.child,
@@ -43,6 +46,7 @@ class PoultryAppShell extends StatelessWidget {
     this.onBack,
     this.onNavigate,
     this.trailing,
+    this.headerOverride,
   });
 
   @override
@@ -58,14 +62,14 @@ class PoultryAppShell extends StatelessWidget {
             child: Column(
               children: [
                 if (MediaQuery.sizeOf(context).width < 900)
-                  _MobileHeader(
+                  headerOverride ?? _MobileHeader(
                     title: title,
                     subtitle: subtitle,
                     onBack: onBack,
                     trailing: trailing,
                   )
                 else
-                  _DesktopHeader(title: title, subtitle: subtitle, trailing: trailing),
+                  headerOverride ?? _DesktopHeader(title: title, subtitle: subtitle, onBack: onBack, trailing: trailing),
                 Expanded(child: child),
               ],
             ),
@@ -103,9 +107,9 @@ class _DesktopSidebar extends StatelessWidget {
             const SizedBox(height: 8),
             const Text('Poultry Inventory', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14),
-              child: _UserProfileTile(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: _UserProfileTile(onTap: onNavigate == null ? null : () => onNavigate!(11)),
             ),
             const SizedBox(height: 14),
             Expanded(
@@ -119,9 +123,7 @@ class _DesktopSidebar extends StatelessWidget {
               ),
             ),
             const Divider(color: Colors.white24, indent: 16, endIndent: 16),
-            _LogoutTile(),
-            const SizedBox(height: 8),
-            const _UserProfileTile(),
+            const _LogoutTile(),
             const SizedBox(height: 8),
           ],
         ),
@@ -199,7 +201,8 @@ class _LogoutTile extends StatelessWidget {
 }
 
 class _UserProfileTile extends StatelessWidget {
-  const _UserProfileTile();
+  final VoidCallback? onTap;
+  const _UserProfileTile({this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -211,11 +214,11 @@ class _UserProfileTile extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      onTap: onTap ?? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.08),
+          color: Colors.white.withValues(alpha: .08),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -279,11 +282,84 @@ class _NavTile extends StatelessWidget {
   }
 }
 
+class DashboardHeader extends StatelessWidget {
+  final String flockName;
+  final DateTime startDate;
+  final int age;
+
+  const DashboardHeader({
+    super.key,
+    required this.flockName,
+    required this.startDate,
+    required this.age,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final start = DateFormat('dd MMM yyyy').format(startDate);
+    final ageText = '$age days old';
+
+    return Container(
+      height: wide ? 86 : 74,
+      padding: EdgeInsets.fromLTRB(wide ? 24 : 14, 10, wide ? 24 : 14, 8),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(wide ? 14 : 12),
+            child: Image.asset(
+              'assets/app_icons/app_logo.png',
+              width: wide ? 58 : 48,
+              height: wide ? 58 : 48,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  flockName.isEmpty ? 'No active flock' : flockName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Color(0xFF0B3D2E),
+                    fontSize: wide ? 23 : 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      'Started $start',
+                      style: TextStyle(color: Color(0xFF527064), fontSize: wide ? 12 : 10),
+                    ),
+                    Text(
+                      'Age $ageText',
+                      style: TextStyle(color: Color(0xFF527064), fontSize: wide ? 12 : 10),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DesktopHeader extends StatelessWidget {
   final String title;
   final String subtitle;
+  final VoidCallback? onBack;
   final Widget? trailing;
-  const _DesktopHeader({required this.title, required this.subtitle, this.trailing});
+  const _DesktopHeader({required this.title, required this.subtitle, this.onBack, this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -292,6 +368,10 @@ class _DesktopHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(24, 14, 24, 8),
       child: Row(
         children: [
+          if (onBack != null)
+            IconButton(onPressed: onBack, icon: const Icon(Icons.arrow_back, color: Color(0xFF0B3D2E)))
+          else
+            const SizedBox(width: 8),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
             Text(title, style: const TextStyle(color: Color(0xFF0B3D2E), fontSize: 25, fontWeight: FontWeight.w800)),
             if (subtitle.isNotEmpty) Text(subtitle, style: const TextStyle(color: Color(0xFF527064), fontSize: 12)),

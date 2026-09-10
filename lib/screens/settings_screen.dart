@@ -32,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final List<TextEditingController> _accountControllers = [];
   final List<TextEditingController> _feedItemControllers = [];
   bool _configLoaded = false;
+  int _selectedSetting = 0;
   DateTime _startDate = FarmConfig.defaultFlockStartDate;
 
   @override
@@ -233,157 +234,265 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final provider = context.read<PoultryProvider>();
     if (!provider.isAdmin) {
-      final content = const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('Settings and administration are managed by the flock administrator.')));
+      final content = const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Settings and administration are managed by the flock administrator.'),
+        ),
+      );
       if (widget.embedded) return content;
-      return PoultryAppShell(selectedIndex: 9, title: 'Settings', subtitle: 'App preferences', child: content);
+      return PoultryAppShell(
+        selectedIndex: 10,
+        title: 'Settings',
+        subtitle: 'App preferences',
+        child: content,
+      );
     }
 
-    final content = ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Flock Configuration', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
-              const SizedBox(height: 5),
-              const Text('Configure the flock and the accounts available in financial pickers. Feed Items are managed independently and are shared across flocks.', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
-              const SizedBox(height: 16),
-              LayoutBuilder(builder: (context, c) {
-                final wide = c.maxWidth >= 700;
-                final fields = <Widget>[
-                  TextField(controller: _startDateController, readOnly: true, decoration: const InputDecoration(labelText: 'Flock Start Date', prefixIcon: Icon(Icons.calendar_today_outlined), border: OutlineInputBorder()), onTap: () async { final picked = await showDatePicker(context: context, initialDate: _startDate, firstDate: DateTime(2000), lastDate: DateTime.now()); if (picked != null) setState(() { _startDate = picked; _startDateController.text = DateFormat('dd MMM yyyy').format(picked); }); }),
-                  TextField(controller: _startingBirdsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Starting Bird Count', prefixIcon: Icon(Icons.pets_outlined), border: OutlineInputBorder())),
-                  TextField(controller: _breedController, decoration: const InputDecoration(labelText: 'Breed Name', prefixIcon: Icon(Icons.category_outlined), border: OutlineInputBorder())),
-                ];
-                return Wrap(spacing: 10, runSpacing: 10, children: fields.map((w) => SizedBox(width: wide ? (c.maxWidth - 20) / 3 : c.maxWidth, child: w)).toList());
-              }),
-              const SizedBox(height: 16),
-              const Text('Accounts', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
-              const SizedBox(height: 8),
-              ..._accountControllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: TextField(controller: entry.value, decoration: InputDecoration(labelText: 'Account ${entry.key + 1}', border: const OutlineInputBorder()))), const SizedBox(width: 8), IconButton(onPressed: () => setState(() { final c = _accountControllers.removeAt(entry.key); c.dispose(); }), icon: const Icon(Icons.remove_circle_outline, color: Colors.red))]))),
-              OutlinedButton.icon(onPressed: _addAccount, icon: const Icon(Icons.add), label: const Text('Add Account')),
-              const SizedBox(height: 12),
-              SizedBox(width: double.infinity, height: 44, child: FilledButton.icon(onPressed: _importing ? null : _saveFlockConfig, icon: const Icon(Icons.save_outlined), label: const Text('Save Flock Configuration'))),
+    final panels = <Widget>[
+      _flockConfigurationPanel(),
+      _feedCatalogPanel(),
+      _dataManagementPanel(),
+      const AdminPanelScreen(embedded: true, adminOnly: true),
+    ];
 
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 900;
+        final selected = _selectedSetting.clamp(0, panels.length - 1);
+        final body = panels[selected];
+
+        if (!wide) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
             children: [
-              const Text('Feed Items', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
-              const SizedBox(height: 5),
-              const Text('Feed items are independent of flock configuration and use the same catalog for every flock.', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
+              _settingsHero(),
               const SizedBox(height: 12),
-              ..._feedItemControllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: TextField(controller: entry.value, decoration: InputDecoration(labelText: 'Feed Item ${entry.key + 1}', border: const OutlineInputBorder()))), const SizedBox(width: 8), IconButton(onPressed: () => setState(() { final c = _feedItemControllers.removeAt(entry.key); c.dispose(); }), icon: const Icon(Icons.remove_circle_outline, color: Colors.red))]))),
-              OutlinedButton.icon(onPressed: _addFeedItem, icon: const Icon(Icons.add), label: const Text('Add Feed Item')),
-              const SizedBox(height: 10),
-              SizedBox(width: double.infinity, height: 44, child: FilledButton.icon(onPressed: _importing ? null : _saveFeedCatalog, icon: const Icon(Icons.save_outlined), label: const Text('Save Feed Items'))),
+              _settingsCategoryList(compact: true),
+              const SizedBox(height: 14),
+              body,
             ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        AppCard(
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Data Backup & Sync', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
-              const SizedBox(height: 5),
-              const Text(
-                'Export the current financial records as portable SQL, or import either a Cashew SQLite export or SQL previously exported by this app. Sync uses deterministic IDs so the same source can be imported again safely.',
-                style: TextStyle(fontSize: 11, color: Color(0xFF75867D)),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5FAF7),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFDCE7E0)),
-                ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              _settingsHero(),
+              const SizedBox(height: 14),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.info_outline, color: Color(0xFF0E9F6E)),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'The import is validated against the four current financial main categories. Electricity is mapped to Layer Bird → Electricity, and source transactions without a specific subcategory use Other Expenses. Accounts are preserved. Daily Logs are never created by this import.',
-                        style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157)),
-                      ),
-                    ),
+                    SizedBox(width: 270, child: _settingsCategoryList()),
+                    const SizedBox(width: 16),
+                    Expanded(child: SingleChildScrollView(child: body)),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 42,
-                child: OutlinedButton.icon(
-                  onPressed: _importing ? null : _exportFinancialSql,
-                  icon: const Icon(Icons.download_outlined),
-                  label: const Text('Export Financial Data as SQL'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF0E9F6E),
-                    side: const BorderSide(color: Color(0xFFBFD8CA)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseRecordsScreen())),
-                icon: const Icon(Icons.account_tree_outlined),
-                label: const Text('Manage & Group Expenses'),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 48,
-                child: FilledButton.icon(
-                  onPressed: _importing ? null : _importCashewData,
-                  icon: _importing
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.upload_file_outlined),
-                  label: Text(_importing ? (_importStatus.isEmpty ? 'Importing…' : _importStatus) : 'Sync Cashew SQLite Data'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF0E9F6E),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 42,
-                child: OutlinedButton.icon(
-                  onPressed: _importing ? null : _deleteImportedCashewData,
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  label: const Text('Delete Old Imported Cashew Data'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Color(0xFFE5BDBD)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-                  ),
-                ),
-              ),
             ],
           ),
-        ),
-        if (provider.isAdmin) ...[
-          const SizedBox(height: 14),
-          const AdminPanelScreen(embedded: true, adminOnly: true),
-        ],
-      ],
+        );
+      },
     );
 
     if (widget.embedded) return content;
     return PoultryAppShell(
-      selectedIndex: 9,
+      selectedIndex: 10,
       title: 'Settings',
-      subtitle: 'App preferences and data tools',
+      subtitle: 'Farm preferences and administration',
       child: content,
     );
   }
+
+  Widget _settingsHero() => Container(
+        padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFE8F7EF), Color(0xFFF7FBF8)],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFD7E9DE)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E9F6E),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.settings_outlined, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Settings', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF162A21))),
+                  SizedBox(height: 3),
+                  Text('Manage your farm, app preferences and administration', style: TextStyle(fontSize: 11, color: Color(0xFF60736A))),
+                ],
+              ),
+            ),
+            const Icon(Icons.tune_outlined, color: Color(0xFF0E9F6E)),
+          ],
+        ),
+      );
+
+  Widget _settingsCategoryList({bool compact = false}) {
+    const items = <_SettingsCategory>[
+      _SettingsCategory('Flock Configuration', 'Farm and flock details', Icons.home_work_outlined, Color(0xFF0E9F6E)),
+      _SettingsCategory('Feed Catalog', 'Shared feed items', Icons.grass_outlined, Color(0xFFF59E0B)),
+      _SettingsCategory('Data Management', 'Backup, import and export', Icons.storage_outlined, Color(0xFF2563EB)),
+      _SettingsCategory('Administration', 'Members, suppliers and notifications', Icons.admin_panel_settings_outlined, Color(0xFF7C3AED)),
+    ];
+
+    final list = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!compact) const Padding(padding: EdgeInsets.fromLTRB(6, 0, 6, 8), child: Text('SETTINGS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: Color(0xFF7A8B83)))),
+        ...List.generate(items.length, (index) {
+          final item = items[index];
+          final selected = _selectedSetting == index;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => setState(() => _selectedSetting = index),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: selected ? const Color(0xFFE7F6EE) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: selected ? const Color(0xFFB9DEC8) : const Color(0xFFE2EAE5)),
+                    boxShadow: selected ? const [BoxShadow(color: Color(0x100E9F6E), blurRadius: 12, offset: Offset(0, 4))] : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(color: item.color.withValues(alpha: .10), borderRadius: BorderRadius.circular(11)),
+                        child: Icon(item.icon, color: item.color, size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.title, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1A2D24))),
+                            const SizedBox(height: 2),
+                            Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, color: Color(0xFF718179))),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded, size: 18, color: selected ? const Color(0xFF0E9F6E) : const Color(0xFF9AA9A2)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+
+    return compact ? list : Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FBFA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE1E9E4)),
+      ),
+      child: list,
+    );
+  }
+
+  Widget _flockConfigurationPanel() => AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _panelTitle('Flock Configuration', 'Configure your flock and financial accounts', Icons.home_work_outlined),
+            const SizedBox(height: 16),
+            LayoutBuilder(builder: (context, c) {
+              final wide = c.maxWidth >= 700;
+              final fields = <Widget>[
+                TextField(controller: _startDateController, readOnly: true, decoration: const InputDecoration(labelText: 'Flock Start Date', prefixIcon: Icon(Icons.calendar_today_outlined), border: OutlineInputBorder()), onTap: () async { final picked = await showDatePicker(context: context, initialDate: _startDate, firstDate: DateTime(2000), lastDate: DateTime.now()); if (picked != null) setState(() { _startDate = picked; _startDateController.text = DateFormat('dd MMM yyyy').format(picked); }); }),
+                TextField(controller: _startingBirdsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Starting Bird Count', prefixIcon: Icon(Icons.pets_outlined), border: OutlineInputBorder())),
+                TextField(controller: _breedController, decoration: const InputDecoration(labelText: 'Breed Name', prefixIcon: Icon(Icons.category_outlined), border: OutlineInputBorder())),
+              ];
+              return Wrap(spacing: 10, runSpacing: 10, children: fields.map((w) => SizedBox(width: wide ? (c.maxWidth - 20) / 3 : c.maxWidth, child: w)).toList());
+            }),
+            const SizedBox(height: 16),
+            const Text('Accounts', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
+            const SizedBox(height: 8),
+            ..._accountControllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: TextField(controller: entry.value, decoration: InputDecoration(labelText: 'Account ${entry.key + 1}', border: const OutlineInputBorder()))), const SizedBox(width: 8), IconButton(onPressed: () => setState(() { final c = _accountControllers.removeAt(entry.key); c.dispose(); }), icon: const Icon(Icons.remove_circle_outline, color: Colors.red))]))),
+            OutlinedButton.icon(onPressed: _addAccount, icon: const Icon(Icons.add), label: const Text('Add Account')),
+            const SizedBox(height: 14),
+            SizedBox(width: double.infinity, height: 44, child: FilledButton.icon(onPressed: _importing ? null : _saveFlockConfig, icon: const Icon(Icons.save_outlined), label: const Text('Save Flock Configuration'))),
+          ],
+        ),
+      );
+
+  Widget _feedCatalogPanel() => AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _panelTitle('Feed Catalog', 'Shared feed items available across all flocks', Icons.grass_outlined),
+            const SizedBox(height: 14),
+            ..._feedItemControllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: TextField(controller: entry.value, decoration: InputDecoration(labelText: 'Feed Item ${entry.key + 1}', border: const OutlineInputBorder()))), const SizedBox(width: 8), IconButton(onPressed: () => setState(() { final c = _feedItemControllers.removeAt(entry.key); c.dispose(); }), icon: const Icon(Icons.remove_circle_outline, color: Colors.red))]))),
+            OutlinedButton.icon(onPressed: _addFeedItem, icon: const Icon(Icons.add), label: const Text('Add Feed Item')),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, height: 44, child: FilledButton.icon(onPressed: _importing ? null : _saveFeedCatalog, icon: const Icon(Icons.save_outlined), label: const Text('Save Feed Items'))),
+          ],
+        ),
+      );
+
+  Widget _dataManagementPanel() => AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _panelTitle('Data Management', 'Backup, import and manage financial data', Icons.storage_outlined),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: const Color(0xFFF5FAF7), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDCE7E0))),
+              child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.info_outline, color: Color(0xFF0E9F6E)), SizedBox(width: 10), Expanded(child: Text('Export financial records as SQL or import Cashew SQLite/SQL data. Imported records use deterministic IDs and never create Daily Logs.', style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157))))]),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: _importing ? null : _exportFinancialSql, icon: const Icon(Icons.download_outlined), label: const Text('Export Financial Data as SQL'))),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseRecordsScreen())), icon: const Icon(Icons.account_tree_outlined), label: const Text('Manage & Group Expenses'))),
+            const SizedBox(height: 8),
+            SizedBox(height: 48, width: double.infinity, child: FilledButton.icon(onPressed: _importing ? null : _importCashewData, icon: _importing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.upload_file_outlined), label: Text(_importing ? (_importStatus.isEmpty ? 'Importing…' : _importStatus) : 'Sync Cashew SQLite Data'))),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: _importing ? null : _deleteImportedCashewData, icon: const Icon(Icons.delete_outline, color: Colors.red), label: const Text('Delete Old Imported Cashew Data'), style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Color(0xFFE5BDBD))))),
+          ],
+        ),
+      );
+
+  Widget _panelTitle(String title, String subtitle, IconData icon) => Row(
+        children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFE6F5ED), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: const Color(0xFF0E9F6E), size: 21)),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF162A21))), const SizedBox(height: 2), Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Color(0xFF75867D)))])),
+        ],
+      );
+}
+
+class _SettingsCategory {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  const _SettingsCategory(this.title, this.subtitle, this.icon, this.color);
 }

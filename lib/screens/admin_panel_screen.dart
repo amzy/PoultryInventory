@@ -8,6 +8,7 @@ import '../models/flock.dart';
 import '../models/supplier.dart';
 import '../providers/poultry_provider.dart';
 import '../services/farm_config.dart';
+import '../services/expense_category_config.dart';
 import '../services/app_sql_export.dart';
 import '../services/sql_file_saver.dart';
 import '../services/cashew_sqlite_importer.dart';
@@ -31,6 +32,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   final _supplierName = TextEditingController();
   final _supplierAddress = TextEditingController();
   final _supplierContact = TextEditingController();
+  String _supplierCategory = '';
   String? _editingSupplierId;
   DateTime _start = DateTime.now();
   DateTime? _end;
@@ -60,6 +62,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (_feeds.isEmpty) for (final x in FarmConfig.defaultFeedItems) _feeds.add(TextEditingController(text: x));
     for (final x in p.expenseSubcategories) _subcategories.add(TextEditingController(text: x));
     try {
+      // Reconcile pending invitations with users who have already signed in.
+      // Firebase Authentication users are not directly listable from the
+      // client, so their Firestore profile is used to provision the flock
+      // membership. The member stream below then updates the UI immediately.
+      await p.syncInvitedMembers(f.id);
       final settings = await context.read<PoultryProvider>().fetchNotificationSettings();
       if (settings != null && mounted) {
         setState(() {
@@ -179,7 +186,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       ];
       final content = ListView(padding: const EdgeInsets.fromLTRB(14, 8, 14, 30), children: widget.adminOnly ? adminSections : fullSections);
       if (widget.embedded) return widget.adminOnly ? Column(children: adminSections) : content;
-      return PoultryAppShell(selectedIndex: 9, title: 'Settings', subtitle: 'Administration', child: content);
+      return PoultryAppShell(selectedIndex: 10, title: 'Settings', subtitle: 'Administration', child: content);
     });
   }
 
@@ -232,6 +239,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       ]),
       const SizedBox(height: 8),
       TextField(controller: _supplierAddress, maxLines: 2, decoration: const InputDecoration(labelText: 'Business Address', border: OutlineInputBorder())),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<String>(value: _supplierCategory.isEmpty ? null : _supplierCategory, decoration: const InputDecoration(labelText: 'Category (Optional)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.category_outlined)), items: [const DropdownMenuItem<String>(value: '', child: Text('No category')), ...ExpenseCategoryConfig.activeSubcategories.map((x) => DropdownMenuItem(value: x, child: Text(x)))], onChanged: (v) => setState(() => _supplierCategory = v ?? '')),
       const SizedBox(height: 10),
       Row(children: [
         Expanded(child: FilledButton.icon(
@@ -248,21 +257,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       if (p.suppliers.isEmpty)
         const Text('No suppliers added yet.', style: TextStyle(color: Color(0xFF75867D)))
       else
-        ...p.suppliers.map((supplier) => Card(
+        ...p.suppliers.take(5).map((supplier) => Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.local_shipping_outlined)),
-            title: Text(supplier.fullName),
+            leading: CircleAvatar(backgroundColor: const Color(0xFFE6F5ED), child: Text(supplier.fullName.trim().isEmpty ? 'S' : supplier.fullName.trim()[0].toUpperCase(), style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w900))),
+            title: Text(supplier.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text([
               if (supplier.contactNumber.isNotEmpty) supplier.contactNumber,
               if (supplier.businessAddress.isNotEmpty) supplier.businessAddress,
-            ].join(' • ')),
-            trailing: Wrap(spacing: 0, children: [
-              IconButton(tooltip: 'Edit supplier', icon: const Icon(Icons.edit_outlined), onPressed: () => _editSupplier(supplier)),
-              IconButton(tooltip: 'Delete supplier', icon: const Icon(Icons.delete_outline), onPressed: () => _deleteSupplier(p, supplier)),
-            ]),
+              if (supplier.category.isNotEmpty) supplier.category,
+            ].join(' • '), maxLines: 2, overflow: TextOverflow.ellipsis),
+            trailing: IconButton(tooltip: 'Edit supplier', icon: const Icon(Icons.edit_outlined), onPressed: () => _editSupplier(supplier)),
           ),
         )),
+        if (p.suppliers.length > 5) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => _showAllSuppliers(p), icon: const Icon(Icons.list_alt_outlined), label: Text('List All (${p.suppliers.length})'))),
     ]),
   );
 
@@ -274,6 +282,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       fullName: name,
       businessAddress: _supplierAddress.text.trim(),
       contactNumber: _supplierContact.text.trim(),
+      category: _supplierCategory,
     );
     try {
       if (_editingSupplierId == null) {
@@ -294,7 +303,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _editingSupplierId = supplier.id;
       _supplierName.text = supplier.fullName;
       _supplierAddress.text = supplier.businessAddress;
-      _supplierContact.text = supplier.contactNumber;
+      _supplierContact.text = supplier.contactNumber; _supplierCategory = supplier.category;
     });
   }
 
@@ -305,48 +314,71 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _supplierName.clear();
       _supplierAddress.clear();
       _supplierContact.clear();
+      _supplierCategory = '';
     });
-  }
-
-  Future<void> _deleteSupplier(PoultryProvider p, Supplier supplier) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Supplier'),
-        content: Text('Delete ${supplier.fullName}? Existing expense records will keep their saved supplier name.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try { await p.deleteSupplier(supplier.id); _snack('Supplier deleted.'); }
-    catch (e) { _snack('Unable to delete supplier: $e'); }
   }
 
   Widget _membersSection(PoultryProvider p) => _section('Flock Members', Icons.group_outlined, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [Expanded(child: TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Registered email address', border: OutlineInputBorder()))), const SizedBox(width: 8), FilledButton.icon(onPressed: _invite, icon: const Icon(Icons.person_add_alt_1), label: const Text('Add / Invite'))]),
     const SizedBox(height: 12),
-    FutureBuilder<List<FlockMembership>>(future: p.activeFlock == null ? Future.value([]) : p.fetchFlockMembers(p.activeFlock!.id), builder: (context, snap) {
-      if (!snap.hasData) return const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator());
-      return Column(children: snap.data!.map((m) => ListTile(
-        leading: CircleAvatar(child: Icon(m.isAdmin ? Icons.admin_panel_settings : Icons.person)),
-        title: Text(m.displayName.isEmpty ? m.email : m.displayName),
-        subtitle: Text('${m.email} • ${m.mobileNumber.isEmpty ? 'No mobile' : m.mobileNumber}'),
-        trailing: Wrap(spacing: 6, children: [
-          DropdownButton<String>(value: m.notificationLanguage, items: const [DropdownMenuItem(value:'en',child:Text('English')),DropdownMenuItem(value:'hi',child:Text('हिंदी'))], onChanged: m.isAdmin ? null : (v) { if(v!=null) p.updateMemberDetails(m.flockId,mobileNumber:m.mobileNumber,notificationLanguage:v); }),
-          if (!m.isAdmin) IconButton(tooltip:'Edit mobile', icon:const Icon(Icons.phone_outlined), onPressed:() => _editMember(p,m)),
-        ]),
-      )).toList());
+    StreamBuilder<List<FlockMembership>>(stream: p.activeFlock == null ? const Stream<List<FlockMembership>>.empty() : p.watchFlockMembers(p.activeFlock!.id), builder: (context, snap) {
+      if (snap.connectionState == ConnectionState.waiting && !snap.hasData) return const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator());
+      if (snap.hasError) return Text('Unable to load members: ${snap.error}');
+      final members = snap.data ?? const <FlockMembership>[];
+      Widget card(FlockMembership m) => Card(margin: const EdgeInsets.only(bottom: 8), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE1EAE5))), child: Padding(padding: const EdgeInsets.all(12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        CircleAvatar(radius: 22, backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty ? m.email : m.displayName).trim().isEmpty ? 'U' : (m.displayName.isEmpty ? m.email : m.displayName).trim()[0].toUpperCase(), style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w900))),
+        const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(m.displayName.isEmpty ? m.email : m.displayName, style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 3), Text(m.email, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))), const SizedBox(height: 3), Text(m.mobileNumber.isEmpty ? 'No mobile number' : m.mobileNumber, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))), const SizedBox(height: 9), Wrap(spacing: 8, runSpacing: 6, children: [
+          DropdownButton<String>(value: m.role, items: const [DropdownMenuItem(value:'admin',child:Text('Admin')),DropdownMenuItem(value:'member',child:Text('Member'))], onChanged: m.uid.isEmpty || m.uid == p.activeFlock?.createdByUid ? null : (v) async { if(v!=null){try{await p.updateMemberRole(m.uid,v);setState((){});_snack('Member role updated.');}catch(e){_snack('Unable to update role: $e');}} }),
+          DropdownButton<String>(value: m.notificationLanguage, items: const [DropdownMenuItem(value:'en',child:Text('English')),DropdownMenuItem(value:'hi',child:Text('हिंदी'))], onChanged: (v) { if(v!=null) p.updateMemberDetails(m.flockId,mobileNumber:m.mobileNumber,notificationLanguage:v); }),
+          OutlinedButton.icon(onPressed:() => _editMember(p,m), icon:const Icon(Icons.edit_outlined,size:16), label:const Text('Edit')),
+          if (m.uid.isNotEmpty && m.uid != p.activeFlock?.createdByUid) IconButton(tooltip:'Remove member', icon:const Icon(Icons.delete_outline,color:Color(0xFFD32F2F)), onPressed:() => _confirmRemoveMember(p,m)),
+        ])]))
+      ])));
+      return Column(children: [
+        ...members.take(5).map(card),
+        if (members.length > 5) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => _showAllMembers(p, members), icon: const Icon(Icons.list_alt_outlined), label: Text('List All (${members.length})'))),
+      ]);
     })
   ]));
+
+
+  Future<void> _showAllMembers(PoultryProvider p, List<FlockMembership> members) async {
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('All Members'), content: SizedBox(width: 560, height: 500, child: ListView.separated(itemCount: members.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, i) { final m=members[i]; return ListTile(leading: CircleAvatar(backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty?m.email:m.displayName).isEmpty?'U':(m.displayName.isEmpty?m.email:m.displayName)[0].toUpperCase(),style:const TextStyle(color:Color(0xFF087A4F)))), title: Text(m.displayName.isEmpty?m.email:m.displayName), subtitle: Text('${m.email} • ${m.role}'), trailing: Wrap(spacing:4, children:[IconButton(tooltip:'Edit',icon:const Icon(Icons.edit_outlined),onPressed:(){Navigator.pop(ctx);_editMember(p,m);}), if (m.uid.isNotEmpty && m.uid != p.activeFlock?.createdByUid) IconButton(tooltip:'Remove member',icon:const Icon(Icons.delete_outline,color:Color(0xFFD32F2F)),onPressed:(){Navigator.pop(ctx);_confirmRemoveMember(p,m);})]),); })), actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
+  }
+
+  Future<void> _confirmRemoveMember(PoultryProvider p, FlockMembership m) async {
+    if (m.uid.isEmpty || m.uid == p.activeFlock?.createdByUid) return;
+    final name = m.displayName.isEmpty ? m.email : m.displayName;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove member?'),
+        content: Text('Remove $name from this flock? Existing daily logs, transactions, and other records created by this user will not be deleted.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await p.removeFlockMember(m.uid);
+      if (mounted) _snack('Member removed from the flock. Existing records were kept.');
+    } catch (e) {
+      if (mounted) _snack('Unable to remove member: $e');
+    }
+  }
 
   Future<void> _editMember(PoultryProvider p, FlockMembership m) async {
     final c=TextEditingController(text:m.mobileNumber);
     final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text('Member: ${m.displayName.isEmpty?m.email:m.displayName}'),content:TextField(controller:c,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number',border:OutlineInputBorder())),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Save'))]));
     if(ok==true){try{await p.updateMemberDetails(m.flockId,mobileNumber:c.text);_snack('Member details updated.');setState((){});}catch(e){_snack('Unable to update member: $e');}}
     c.dispose();
+  }
+
+
+  Future<void> _showAllSuppliers(PoultryProvider p) async {
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('All Suppliers'), content: SizedBox(width: 560, height: 480, child: ListView.separated(itemCount: p.suppliers.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, i) { final s=p.suppliers[i]; return ListTile(leading: CircleAvatar(backgroundColor: const Color(0xFFE6F5ED), child: Text(s.fullName.isEmpty?'S':s.fullName[0].toUpperCase(),style:const TextStyle(color:Color(0xFF087A4F)))), title: Text(s.fullName), subtitle: Text([s.contactNumber,s.businessAddress].where((x)=>x.isNotEmpty).join(' • '), maxLines:2, overflow:TextOverflow.ellipsis), trailing: IconButton(icon:const Icon(Icons.edit_outlined),onPressed:(){Navigator.pop(ctx);_editSupplier(s);}),); })), actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
   }
 
   Widget _notificationsSection(PoultryProvider p) => _section('Notifications', Icons.notifications_active_outlined, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -127,6 +127,41 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+
+  Future<void> _completeGoogleSignup() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !mounted) return;
+    final invitation = await _firebase.pendingInvitationForEmail(user.email ?? '');
+    final mobile = TextEditingController();
+    final age = TextEditingController();
+    var role = invitation != null ? 'member' : 'admin';
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
+        title: const Text('Complete your account'),
+        content: SizedBox(width: 430, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [CircleAvatar(radius: 24, backgroundImage: user.photoURL == null ? null : NetworkImage(user.photoURL!), child: user.photoURL == null ? const Icon(Icons.person) : null), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(user.displayName ?? 'Google user', style: const TextStyle(fontWeight: FontWeight.w800)), Text(user.email ?? '', style: const TextStyle(fontSize: 11, color: Color(0xFF75867D)))]))]),
+          const SizedBox(height: 18),
+          if (invitation != null) Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFEAF7EF), borderRadius: BorderRadius.circular(12)), child: Row(children: [const Icon(Icons.mail_outline, color: Color(0xFF087A4F)), const SizedBox(width: 9), Expanded(child: Text('Invitation found for ${invitation['flockName'] ?? 'a farm'}. Your role is preselected as Member.', style: const TextStyle(fontSize: 12, color: Color(0xFF315B4A))))])),
+          const SizedBox(height: 12),
+          TextField(controller: mobile, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile Number', prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          TextField(controller: age, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Age (optional)', prefixIcon: Icon(Icons.cake_outlined), border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(value: role, decoration: const InputDecoration(labelText: 'Account Type', prefixIcon: Icon(Icons.badge_outlined), border: OutlineInputBorder()), items: const [DropdownMenuItem(value:'admin',child:Text('Farm Owner / Admin')),DropdownMenuItem(value:'member',child:Text('Farm Member'))], onChanged: invitation != null ? null : (v){if(v!=null)setDialogState(()=>role=v);}),
+        ])),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Continue'))],
+      )),
+    );
+    if (result != true) { await _firebase.signOut(); mobile.dispose(); age.dispose(); return; }
+    final ageValue = age.text.trim().isEmpty ? null : int.tryParse(age.text.trim());
+    if (age.text.trim().isNotEmpty && (ageValue == null || ageValue < 1 || ageValue > 120)) { if(mounted)setState(()=>_error='Enter a valid age.'); await _firebase.signOut(); mobile.dispose(); age.dispose(); return; }
+    if (mobile.text.trim().length < 8 || mobile.text.trim().length > 20) { if(mounted)setState(()=>_error='Enter a valid mobile number.'); await _firebase.signOut(); mobile.dispose(); age.dispose(); return; }
+    await _firebase.completeGoogleProfile(role: role, mobileNumber: mobile.text.trim(), age: ageValue);
+    mobile.dispose(); age.dispose();
+  }
+
   Future<void> _signInWithGoogle() async {
     FocusScope.of(context).unfocus();
     setState(() {
@@ -135,7 +170,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      await _firebase.signInWithGoogle();
+      final credential = await _firebase.signInWithGoogle();
+      if (credential.additionalUserInfo?.isNewUser == true && mounted) {
+        await _completeGoogleSignup();
+      }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       if (e.code == 'sign-in-cancelled' || e.code == 'popup-closed-by-user') {

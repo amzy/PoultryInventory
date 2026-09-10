@@ -121,12 +121,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
             const SizedBox(height: 14),
             _reportCard(
               'FCR',
-              'Feed consumption divided by trays for each Daily Log.',
+              'Feed consumption divided by total egg mass for each Daily Log.',
               Icons.speed_outlined,
               logs
                   .map((log) => _Point(
                         DateFormat('dd MMM').format(log.date),
-                        log.automatedFCR,
+                        log.fcrByEggMass,
                       ))
                   .toList(),
             ),

@@ -27,16 +27,17 @@ PoultryLog makeLog({
 
 void main() {
   group('PoultryCalculationService', () {
-    test('calculates eggs and FCR from Daily Log observations', () {
+    test('calculates eggs and egg-mass FCR from Daily Log observations', () {
       final result = PoultryCalculationService.calculate(
         input: makeLog(date: '2026-09-06', trays: 30, feed: 45),
       );
 
       expect(result.totalEggs, 900);
-      expect(result.automatedFCR, 1.5);
+      expect(result.eggMassKg, closeTo(37.11, 0.0001));
+      expect(result.automatedFCR, closeTo(45 / 37.11, 0.0001));
     });
 
-    test('calculates zero FCR when no trays are recorded', () {
+    test('calculates zero FCR when egg mass is unavailable', () {
       final result = PoultryCalculationService.calculate(
         input: makeLog(date: '2026-09-06', trays: 0, feed: 45),
       );
@@ -191,14 +192,14 @@ void main() {
       expect(log.automatedFCR, 2);
     });
 
-    test('total eggs and FCR are calculated fields', () {
+    test('total eggs and egg-mass FCR are calculated fields', () {
       final input = makeLog(date: '2026-09-08', trays: 12, feed: 60);
       final calculated = PoultryCalculationService.calculate(input: input);
 
       expect(calculated.totalEggs, 360);
-      expect(calculated.automatedFCR, 5);
+      expect(calculated.automatedFCR, closeTo(60 / 14.844, 0.0001));
       expect(calculated.toFirestore()['totalEggs'], 360);
-      expect(calculated.toFirestore()['automatedFCR'], 5);
+      expect(calculated.toFirestore()['automatedFCR'], closeTo(60 / 14.844, 0.0001));
     });
 
     test('flock age uses the default configured flock start date', () {

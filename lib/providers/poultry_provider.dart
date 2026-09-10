@@ -40,7 +40,23 @@ class PoultryProvider with ChangeNotifier {
   String get activeFlockId => _activeFlock?.id ?? '';
   bool get hasFlock => _activeFlock != null;
   PoultryProvider() { _authSub = _firebase.authChanges.listen((_) { if (_firebase.isSignedIn) { _startup(); } else { _resetLocal(); } }); _startup(); }
-  Future<void> _startup() async { _isLoading=true; notifyListeners(); try { if (_firebase.isSignedIn) { await _reload(); await NotificationService.instance.registerToken(); } } catch(e){_errorMessage='Unable to load Firebase data: $e';} finally{_isLoading=false;notifyListeners();} }
+  Future<void> _startup() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      if (_firebase.isSignedIn) {
+        await _reload();
+        // Token registration should never delay the first dashboard render.
+        // It can complete in the background after the farm data is available.
+        NotificationService.instance.registerToken().catchError((_) {});
+      }
+    } catch (e) {
+      _errorMessage = 'Unable to load Firebase data: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
   Future<void> _reload() async {
     _isAdmin = await _firebase.ensureUserProfile();
     _flocks = await _firebase.fetchFlocks();
@@ -56,23 +72,19 @@ class PoultryProvider with ChangeNotifier {
     final selected = matches.isNotEmpty ? matches.first : _flocks.first;
     _activeFlock = selected;
     _firebase.setActiveFlock(selected.id);
-    final logs = await _firebase.fetchLogs();
-    final expenses = await _firebase.fetchExpenseRecords();
-    try {
-      _feedItems = await _firebase.fetchGlobalFeedItems();
-    } catch (_) {
-      _feedItems = List<String>.from(FarmConfig.defaultFeedItems);
-    }
-    try {
-      _expenseSubcategories = await _firebase.fetchGlobalExpenseSubcategories();
-    } catch (_) {
-      _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories);
-    }
-    try {
-      _suppliers = await _firebase.fetchSuppliers();
-    } catch (_) {
-      _suppliers = [];
-    }
+    final results = await Future.wait<dynamic>([
+      _firebase.fetchLogs(),
+      _firebase.fetchExpenseRecords(),
+      _firebase.fetchGlobalFeedItems().catchError((_) => List<String>.from(FarmConfig.defaultFeedItems)),
+      _firebase.fetchGlobalExpenseSubcategories().catchError((_) => List<String>.from(ExpenseCategoryConfig.defaultSubcategories)),
+      _firebase.fetchSuppliers().catchError((_) => <Supplier>[]),
+    ]);
+
+    final logs = results[0] as List<PoultryLog>;
+    final expenses = results[1] as List<ExpenseSalesLog>;
+    _feedItems = List<String>.from(results[2] as List<String>);
+    _expenseSubcategories = List<String>.from(results[3] as List<String>);
+    _suppliers = List<Supplier>.from(results[4] as List<Supplier>);
     ExpenseCategoryConfig.setSubcategories(_expenseSubcategories);
     _farmConfig = FarmConfig(
       flockStartDate: selected.startDate,
@@ -130,6 +142,8 @@ class PoultryProvider with ChangeNotifier {
   }
 
   Future<List<FlockMembership>> fetchFlockMembers(String flockId) => _firebase.fetchMembers(flockId);
+  Stream<List<FlockMembership>> watchFlockMembers(String flockId) => _firebase.watchMembers(flockId);
+  Future<int> syncInvitedMembers(String flockId) => _firebase.syncInvitedMembers(flockId);
   Future<void> inviteFlockMember(String email) async { final id = activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.inviteMember(flockId: id, email: email); }
   Future<Map<String, dynamic>?> fetchNotificationSettings() => _firebase.fetchNotificationSettings(activeFlockId);
   Future<void> saveNotificationSettings(Map<String, dynamic> data) => _firebase.saveNotificationSettings(activeFlockId, data);
@@ -137,6 +151,7 @@ class PoultryProvider with ChangeNotifier {
   Future<void> saveNotificationTemplate(String id, Map<String, dynamic> data) => _firebase.saveNotificationTemplate(activeFlockId, id, data);
   Future<void> sendFlockNotification({required String titleEn, required String titleHi, required String bodyEn, required String bodyHi, String? memberUid}) => _firebase.sendFlockNotification(flockId: activeFlockId, titleEn:titleEn, titleHi:titleHi, bodyEn:bodyEn, bodyHi:bodyHi, memberUid:memberUid);
   Future<void> updateMemberDetails(String uid, {String? mobileNumber, String? notificationLanguage}) => _firebase.updateMemberDetails(activeFlockId, uid, mobileNumber:mobileNumber, notificationLanguage:notificationLanguage);
+  Future<void> updateMemberRole(String uid, String role) => _firebase.updateMemberRole(activeFlockId, uid, role);
   Future<void> removeFlockMember(String uid) async { final id = activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.removeMember(id, uid); }
 
   void _resetLocal() {
@@ -269,5 +284,5 @@ class PoultryProvider with ChangeNotifier {
   double get totalCredits=>_expenseRecords.where((e)=>e.transactionType=='credit').fold(0.0,(s,e)=>s+e.netTotal);
   double get totalEggSales=>_expenseRecords.where((e)=>e.transactionType=='credit').fold(0.0,(s,e)=>s+e.netTotal);
   double get netExpense=>totalExpenses-totalCredits;
-  double get averageFcr {final x=_logs.map((e)=>e.automatedFCR).where((e)=>e>0).toList();return x.isEmpty?0:x.reduce((a,b)=>a+b)/x.length;}
+  double get averageFcr {final x=_logs.map((e)=>e.fcrByEggMass).where((e)=>e>0).toList();return x.isEmpty?0:x.reduce((a,b)=>a+b)/x.length;}
 }

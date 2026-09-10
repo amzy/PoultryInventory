@@ -61,6 +61,14 @@ class PoultryLog {
 
   int get flockAge => FarmConfig.flockAgeOn(date);
 
+  /// Total egg mass produced by this log, in kilograms.
+  /// Avg tray weight is the weight of one 30-egg tray in grams.
+  double get eggMassKg => trays * avgTrayWeight / 1000.0;
+
+  /// Industry-standard FCR based on egg mass: feed consumed (kg) / egg mass (kg).
+  /// A zero value means egg mass is unavailable or zero.
+  double get fcrByEggMass => eggMassKg > 0 ? feedConsumed / eggMassKg : 0.0;
+
   PoultryLog copyWith({
     DateTime? date,
     int? totalEggs,

@@ -61,6 +61,7 @@ class Flock {
 }
 
 class FlockMembership {
+  final String uid;
   final String flockId;
   final String role;
   final String email;
@@ -68,11 +69,12 @@ class FlockMembership {
   final String mobileNumber;
   final String notificationLanguage;
 
-  const FlockMembership({required this.flockId, required this.role, required this.email, required this.displayName, this.mobileNumber = '', this.notificationLanguage = 'en'});
+  const FlockMembership({this.uid = '', required this.flockId, required this.role, required this.email, required this.displayName, this.mobileNumber = '', this.notificationLanguage = 'en'});
 
   bool get isAdmin => role == 'admin';
 
-  factory FlockMembership.fromFirestore(String flockId, Map<String, dynamic> data) => FlockMembership(
+  factory FlockMembership.fromFirestore(String flockId, Map<String, dynamic> data, {String uid = ''}) => FlockMembership(
+    uid: uid,
     flockId: flockId,
     role: data['role']?.toString() == 'admin' ? 'admin' : 'member',
     email: data['email']?.toString() ?? '',

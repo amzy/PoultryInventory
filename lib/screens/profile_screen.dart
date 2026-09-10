@@ -9,7 +9,10 @@ import '../providers/poultry_provider.dart';
 import '../widgets/app_shell.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final bool embedded;
+  final VoidCallback? onEmbeddedBack;
+
+  const ProfileScreen({super.key, this.embedded = false, this.onEmbeddedBack});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -124,10 +127,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const PoultryAppShell(
+      final loading = const Center(child: CircularProgressIndicator());
+      if (widget.embedded) return loading;
+
+      return PoultryAppShell(
         title: 'My Profile',
         subtitle: 'Personal account information',
-        child: Center(child: CircularProgressIndicator()),
+        onBack: () => Navigator.maybePop(context),
+        child: loading,
       );
     }
 
@@ -136,74 +143,119 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? null
         : MemoryImage(base64Decode(_avatarBase64!));
 
+    final content = ListView(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
+      children: [
+        AppCard(
+          child: Column(
+            children: [
+              GestureDetector(
+                onTap: _pickAvatar,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    CircleAvatar(
+                      radius: 52,
+                      backgroundColor: const Color(0xFFE5F1EB),
+                      backgroundImage: image,
+                      child: image == null
+                          ? const Icon(
+                              Icons.person,
+                              size: 54,
+                              color: Color(0xFF087A4F),
+                            )
+                          : null,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF087A4F),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt_outlined,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                user?.email ?? _email.text,
+                style: const TextStyle(
+                  color: Color(0xFF75867D),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _field(_name, 'Full Name', Icons.person_outline),
+              const SizedBox(height: 10),
+              _field(
+                _email,
+                'Email Address',
+                Icons.email_outlined,
+                keyboard: TextInputType.emailAddress,
+                readOnly: true,
+              ),
+              const SizedBox(height: 10),
+              _field(
+                _mobile,
+                'Mobile Number',
+                Icons.phone_outlined,
+                keyboard: TextInputType.phone,
+              ),
+              const SizedBox(height: 10),
+              _field(
+                _age,
+                'Age',
+                Icons.cake_outlined,
+                keyboard: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(_saving ? 'Saving…' : 'Save Profile'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        const AppCard(
+          child: Text(
+            'Email is your sign-in address and is read-only here. Your role and flock permissions are managed separately and cannot be changed from your profile.',
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.45,
+              color: Color(0xFF456157),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (widget.embedded) return content;
+
     return PoultryAppShell(
       title: 'My Profile',
       subtitle: 'Personal account information',
       onBack: () => Navigator.maybePop(context),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
-        children: [
-          AppCard(
-            child: Column(
-              children: [
-                GestureDetector(
-                  onTap: _pickAvatar,
-                  child: Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      CircleAvatar(
-                        radius: 52,
-                        backgroundColor: const Color(0xFFE5F1EB),
-                        backgroundImage: image,
-                        child: image == null
-                            ? const Icon(Icons.person, size: 54, color: Color(0xFF087A4F))
-                            : null,
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(color: Color(0xFF087A4F), shape: BoxShape.circle),
-                        child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 18),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  user?.email ?? _email.text,
-                  style: const TextStyle(color: Color(0xFF75867D), fontSize: 12),
-                ),
-                const SizedBox(height: 20),
-                _field(_name, 'Full Name', Icons.person_outline),
-                const SizedBox(height: 10),
-                _field(_email, 'Email Address', Icons.email_outlined, keyboard: TextInputType.emailAddress, readOnly: true),
-                const SizedBox(height: 10),
-                _field(_mobile, 'Mobile Number', Icons.phone_outlined, keyboard: TextInputType.phone),
-                const SizedBox(height: 10),
-                _field(_age, 'Age', Icons.cake_outlined, keyboard: TextInputType.number),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 46,
-                  child: FilledButton.icon(
-                    onPressed: _saving ? null : _save,
-                    icon: _saving
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.save_outlined),
-                    label: Text(_saving ? 'Saving…' : 'Save Profile'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          const AppCard(
-            child: Text(
-              'Email is your sign-in address and is read-only here. Your role and flock permissions are managed separately and cannot be changed from your profile.',
-              style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157)),
-            ),
-          ),
-        ],
-      ),
+      child: content,
     );
   }
 

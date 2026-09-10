@@ -48,7 +48,7 @@ class LogDetailScreen extends StatelessWidget {
             _value('Feed Consumed', '${_number(log.feedConsumed)} kg'),
             _value('Stone/Grit', '${_number(log.stoneGritConsumed)} kg'),
             _value('Water Intake', '${_number(log.waterIntake)} L'),
-            _value('FCR / Tray', log.automatedFCR.toStringAsFixed(2)),
+            _value('FCR / Egg Mass', log.fcrByEggMass.toStringAsFixed(2)),
           ]),
         ],
       ),

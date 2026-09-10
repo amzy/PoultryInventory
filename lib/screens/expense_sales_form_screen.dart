@@ -77,7 +77,11 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
     _selectedCategory = ExpenseCategoryConfig.isValidSubcategory(_selectedMainCategory, requestedCategory)
         ? requestedCategory.trim()
         : 'Other Expenses';
-    _selectedAccount = existing?.account ?? ExpenseCategoryConfig.activeAccounts.first;
+    final configuredAccounts = ExpenseCategoryConfig.activeAccounts;
+    final existingAccount = existing?.account.trim() ?? '';
+    _selectedAccount = existingAccount.isNotEmpty
+        ? existingAccount
+        : configuredAccounts.first;
     _selectedSupplierId = existing?.supplierId;
 
     _descriptionController.text = existing?.description ?? '';
@@ -225,6 +229,15 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
         children: [
+          if (!widget.embedded && widget.existingRecord != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => Navigator.maybePop(context),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Back'),
+              ),
+            ),
           AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(_editing ? 'Edit Record' : 'Record Details', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
             const SizedBox(height: 5),
@@ -306,6 +319,16 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
 
   Widget _accountPicker() {
     final accounts = ExpenseCategoryConfig.activeAccounts;
+
+    // When a flock has only one configured account, that account is implicit
+    // for every expense/sale form. Keep it selected without showing a picker.
+    if (accounts.length == 1) {
+      if (_selectedAccount != accounts.first) {
+        _selectedAccount = accounts.first;
+      }
+      return const SizedBox.shrink();
+    }
+
     final value = accounts.contains(_selectedAccount) ? _selectedAccount : accounts.first;
     return DropdownButtonFormField<String>(
       value: value,

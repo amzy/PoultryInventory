@@ -1,0 +1,1356 @@
+{
+  "schema_version": "1.0",
+  "project_name": "Poultry Inventory",
+  "package_name": "poultry_inventory",
+  "mapping_purpose": "Fast reference for the updated source tree; use this mapping to locate relevant files before opening source/archive content.",
+  "source_root": "/mnt/data/poultry_src",
+  "generated_at": "2026-09-10",
+  "source_archive": "Archive(6).zip",
+  "updated_archive": "PoultryInventory_ALL_CHANGES_APPLIED.zip",
+  "validation": {
+    "flutter_available": false,
+    "flutter_analyze_run": false,
+    "flutter_test_run": false,
+    "release_build_run": false,
+    "note": "Flutter/Dart tooling was unavailable in the execution environment; source edits were inspected but not compiled here."
+  },
+  "navigation_indices": {
+    "dashboard": 0,
+    "reports": 1,
+    "daily_log": 2,
+    "medical": 3,
+    "feed": 4,
+    "grit": 5,
+    "tray": 6,
+    "other_expenses": 7,
+    "egg_sales": 8,
+    "suppliers": 9,
+    "settings": 10
+  },
+  "key_files": {
+    "lib/main.dart": {
+      "path": "lib/main.dart",
+      "role": "Application entry point, Firebase initialization, Provider setup and root app wiring."
+    },
+    "lib/widgets/app_shell.dart": {
+      "path": "lib/widgets/app_shell.dart",
+      "role": "Shared responsive navigation shell; sidebar/mobile navigation including Suppliers and Settings."
+    },
+    "lib/screens/dashboard_screen.dart": {
+      "path": "lib/screens/dashboard_screen.dart",
+      "role": "Primary dashboard, flock summary, metrics, expenses/earnings, recent transactions and daily logs."
+    },
+    "lib/screens/suppliers_screen.dart": {
+      "path": "lib/screens/suppliers_screen.dart",
+      "role": "Dedicated supplier directory with search, contact-style cards, category picker, add/edit."
+    },
+    "lib/screens/admin_panel_screen.dart": {
+      "path": "lib/screens/admin_panel_screen.dart",
+      "role": "Admin management for suppliers, members, roles, languages, notifications and list-all dialogs."
+    },
+    "lib/screens/settings_screen.dart": {
+      "path": "lib/screens/settings_screen.dart",
+      "role": "Settings/admin container; uses navigation index 10 after Suppliers insertion."
+    },
+    "lib/screens/login_screen.dart": {
+      "path": "lib/screens/login_screen.dart",
+      "role": "Email/Google authentication and detailed Google signup completion with invitation detection."
+    },
+    "lib/services/firebase_service.dart": {
+      "path": "lib/services/firebase_service.dart",
+      "role": "Firestore/Auth service; profiles, flocks, members, invitations, suppliers and role updates."
+    },
+    "lib/providers/poultry_provider.dart": {
+      "path": "lib/providers/poultry_provider.dart",
+      "role": "Provider state and forwarding methods for flock/member/supplier operations."
+    },
+    "lib/models/flock.dart": {
+      "path": "lib/models/flock.dart",
+      "role": "Flock and membership models; membership now carries uid for role updates."
+    },
+    "lib/models/supplier.dart": {
+      "path": "lib/models/supplier.dart",
+      "role": "Supplier model; optional category field with backward-compatible serialization."
+    },
+    "lib/models/expense_sales_log.dart": {
+      "path": "lib/models/expense_sales_log.dart",
+      "role": "Financial transaction model including supplier/account/creator metadata."
+    },
+    "lib/models/poultry_log.dart": {
+      "path": "lib/models/poultry_log.dart",
+      "role": "Daily log model including creator/updater metadata."
+    },
+    "lib/services/expense_category_config.dart": {
+      "path": "lib/services/expense_category_config.dart",
+      "role": "Canonical financial category definitions used by supplier category picker."
+    },
+    "firestore.rules": {
+      "path": "firestore.rules",
+      "role": "Firestore authorization/business rules; preserve flock scoping and admin/member constraints."
+    },
+    "pubspec.yaml": {
+      "path": "pubspec.yaml",
+      "role": "Flutter SDK constraints and package dependencies/assets."
+    },
+    "CHANGES_APPLIED.md": {
+      "path": "CHANGES_APPLIED.md",
+      "role": "Human-readable summary of applied changes and validation limitation."
+    },
+    "SIGNUP_FLOW.md": {
+      "path": "SIGNUP_FLOW.md",
+      "role": "Signup/invitation behavior documentation."
+    },
+    "BACKWARD_COMPATIBILITY.md": {
+      "path": "BACKWARD_COMPATIBILITY.md",
+      "role": "Legacy data compatibility notes and migration behavior."
+    }
+  },
+  "files": [
+    {
+      "path": "BACKWARD_COMPATIBILITY.md",
+      "category": "documentation",
+      "size_bytes": 1539,
+      "sha256": "cd53d2303d8b3729b055ff7ad0014d4ee03badc4c3641dbed182738d9ddb9c1a",
+      "updated_in_current_change_set": true,
+      "role": "Legacy data compatibility notes and migration behavior."
+    },
+    {
+      "path": "BUILD_REPO_README.md",
+      "category": "documentation",
+      "size_bytes": 1170,
+      "sha256": "39862425d469ace5a5c3035eeb7d788e02dcbb1a87c092d0c1157e433507ea7b",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "CASHEW_IMPORT_README.md",
+      "category": "documentation",
+      "size_bytes": 3293,
+      "sha256": "5b75b4ed2d4df330049ab7bfbd3fbc5d10ddfc002e9b1d2c7fcbdb7b3ecaafa6",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "CHANGES_APPLIED.md",
+      "category": "documentation",
+      "size_bytes": 1772,
+      "sha256": "b5dabb27a71e89821094fe3f4bd5f5afc51097adb39f0b527ef18a1cc4bfa24d",
+      "updated_in_current_change_set": true,
+      "role": "Human-readable summary of applied changes and validation limitation."
+    },
+    {
+      "path": "FIREBASE_CONFIGURED.md",
+      "category": "documentation",
+      "size_bytes": 1169,
+      "sha256": "2975271fa1aaf085d9002202ddf1265bd431d6f1ea86dad49177b5380d04112b",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "FIREBASE_MIGRATION.md",
+      "category": "documentation",
+      "size_bytes": 2860,
+      "sha256": "58a0c51d94a4ff17f739cf1fbfc9503ce8605635e5a6b788ec1f4267c07a2e56",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "FIREBASE_SPARK_SECURITY.md",
+      "category": "documentation",
+      "size_bytes": 1837,
+      "sha256": "77efb1a93a1e2231c7e51bfd0cb49f12087cb52502ba8dc9a494b4216b37f115",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "GITHUB_PAGES.md",
+      "category": "documentation",
+      "size_bytes": 1153,
+      "sha256": "e7109b8c22e2f3c7619626b2af9514a90d0eb24485c6ddd027d80d853e8fbd5e",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "README.md",
+      "category": "documentation",
+      "size_bytes": 1971,
+      "sha256": "83127e2660c8fab179a2447ecdee4b91b38f3b5476db839a918c36141e45fe5a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "README_BUILD_REPO.md",
+      "category": "documentation",
+      "size_bytes": 1170,
+      "sha256": "39862425d469ace5a5c3035eeb7d788e02dcbb1a87c092d0c1157e433507ea7b",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "SIGNUP_FLOW.md",
+      "category": "documentation",
+      "size_bytes": 1587,
+      "sha256": "35b5601b4d0c620e34fc21cee401b10867a66c648a79a4d6e5a4d282e32d2875",
+      "updated_in_current_change_set": true,
+      "role": "Signup/invitation behavior documentation."
+    },
+    {
+      "path": "analysis_options.yaml",
+      "category": "config",
+      "size_bytes": 1499,
+      "sha256": "4d083b2e081d583e2a6e63ff35211e485702589237ae22252869fcec14f69612",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/README.md",
+      "category": "android",
+      "size_bytes": 677,
+      "sha256": "055a3fbf565dd0b025695bd80a9bda6db5601258e970cc167eceb5bf75d5b6b8",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/build.gradle",
+      "category": "android",
+      "size_bytes": 793,
+      "sha256": "fb690e980d8bdefe90b285f1cd6cea304ec78c6d3ff75bde9046c0eab6ddd1b1",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/google-services.json",
+      "category": "android",
+      "size_bytes": 1013,
+      "sha256": "7e9e8b12a4e046db2de438f401dec22aca52cce10f29f4e80a10f249c07af499",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/google-services.json.example",
+      "category": "android",
+      "size_bytes": 261,
+      "sha256": "e8e0ae8661fdea65c845c807d6f0e56c1eeaddc47f8935393f0689f6b39a30dc",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/debug/AndroidManifest.xml",
+      "category": "android",
+      "size_bytes": 149,
+      "sha256": "678647a824ef7ab16066708585790ab265135d32fdf84bcd918a4b050f8891b9",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "category": "android",
+      "size_bytes": 1290,
+      "sha256": "c5321e16d1a8db38aa1389cd595028619d4418afe25a077a4bc2c570cda8e5ea",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java",
+      "category": "android",
+      "size_bytes": 3349,
+      "sha256": "312576b6b356b2c8c9f48bae8d0f6079c7e8d79229aacab92b388f5e5de21874",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/amzy/poultryinventory/MainActivity.kt",
+      "category": "android",
+      "size_bytes": 127,
+      "sha256": "a4aa462ac71270387e4fd6e8130d457b4a480dcd642d3cfe436033b283a29240",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_background.xml",
+      "category": "android",
+      "size_bytes": 179,
+      "sha256": "3630ecffe05fc305f6fc40c517f4a0974a27af668f07a138aa1bfcc423d765fa",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_foreground.png",
+      "category": "android",
+      "size_bytes": 418217,
+      "sha256": "31db5d295cc60361c806a0b8ac107337f23c5902c790d51ef239ec4ebc2ec34b",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/drawable/launch_background.xml",
+      "category": "android",
+      "size_bytes": 178,
+      "sha256": "2e90fa1f7353d0b48b32e345b759315315db2ebdb4fc3c577c6a8fbeae044cb4",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/drawable-v21/launch_background.xml",
+      "category": "android",
+      "size_bytes": 178,
+      "sha256": "2e90fa1f7353d0b48b32e345b759315315db2ebdb4fc3c577c6a8fbeae044cb4",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "category": "android",
+      "size_bytes": 271,
+      "sha256": "9137642568eba268917309bee6b645300070a000bba4213da60bda3e197c376a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "category": "android",
+      "size_bytes": 4228,
+      "sha256": "d8307e055c77d56f66fab58816144902b4f5b6f558f6ff68a7ae4e7cca8c2461",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "category": "android",
+      "size_bytes": 2389,
+      "sha256": "7796ff634bc056fd6711b9332a55bac8210aff92633a23873f2347acf7eeb02a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "category": "android",
+      "size_bytes": 6354,
+      "sha256": "d8f315bdc89cc2e597fe7453063a29921beb1dc9843f00de5b95fa6d965433e2",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "category": "android",
+      "size_bytes": 12127,
+      "sha256": "42d445d3cb07960d9241e65cb934be22d38307b1b6a9a3a43850ad4ce8d27841",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "category": "android",
+      "size_bytes": 21103,
+      "sha256": "5c1a47f7921803d120480e761b997c0152a86f0503283a1ee0f709d958795a43",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/values/styles.xml",
+      "category": "android",
+      "size_bytes": 425,
+      "sha256": "5f1ca40e42f5dea4059958fd1aa30bcfae3b7e4fa203d1384bcfc6420c70abb8",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/main/res/values-night/styles.xml",
+      "category": "android",
+      "size_bytes": 425,
+      "sha256": "5f1ca40e42f5dea4059958fd1aa30bcfae3b7e4fa203d1384bcfc6420c70abb8",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/app/src/profile/AndroidManifest.xml",
+      "category": "android",
+      "size_bytes": 149,
+      "sha256": "678647a824ef7ab16066708585790ab265135d32fdf84bcd918a4b050f8891b9",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/build.gradle",
+      "category": "android",
+      "size_bytes": 322,
+      "sha256": "37bb5e2370be94561043add48ffcc5a939b438f226fc0666a6a1e6a826794d1a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.properties",
+      "category": "android",
+      "size_bytes": 203,
+      "sha256": "b00bce270ab40aa29758d7fe51c356a1bf8dc9a9a0d15e2a5d9a8a6609a749be",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/gradle.properties",
+      "category": "android",
+      "size_bytes": 135,
+      "sha256": "d6b056bd3b740d434cade7c847233d82e4b92d2787ee5db68411faf5e8c838ec",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/local.properties",
+      "category": "android",
+      "size_bytes": 36,
+      "sha256": "332e9f5f80c7421a41f8132b0fa36145b5cbb06e70f10ee376924b5edda68605",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "android/settings.gradle",
+      "category": "android",
+      "size_bytes": 795,
+      "sha256": "b0afe1e98d17a20db5686c48197447b841a915bc9b0da9a289d87eef0726cea3",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "assets/app_icons/android_adaptive_foreground.png",
+      "category": "asset",
+      "size_bytes": 418217,
+      "sha256": "31db5d295cc60361c806a0b8ac107337f23c5902c790d51ef239ec4ebc2ec34b",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "assets/app_icons/app_logo.png",
+      "category": "asset",
+      "size_bytes": 478594,
+      "sha256": "b65a5aac3cfd2a472235e76ba80c7b4c47b7ac120e44dc2ab95e64a9c0f27fd4",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "assets/app_icons/appstore.png",
+      "category": "asset",
+      "size_bytes": 461993,
+      "sha256": "8a9e46246d45c3f41f8e0c6884fef8d96f214d4cee9c52bc63c63dbe50c2825a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "assets/app_icons/playstore.png",
+      "category": "asset",
+      "size_bytes": 149276,
+      "sha256": "675afbebac62485c695e48eb38d127f533d48590699cb7a1018b6eb6061c3715",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "current_icons.jpg",
+      "category": "other",
+      "size_bytes": 18157,
+      "sha256": "179cc79e08d983d03cea78337601bdc4a313884a4cb07910041f7c384283e096",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "firebase-debug.log",
+      "category": "other",
+      "size_bytes": 96104,
+      "sha256": "fe9ee9d81810489e826824b83540716b45c91a3908a621e5fcc2429859bab06e",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "firebase.json",
+      "category": "config",
+      "size_bytes": 137,
+      "sha256": "0a1afdffff7230b83a1787e02084c7593f1ba13792b8a66e5ec0a1564713fe99",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "firestore.indexes.json",
+      "category": "config",
+      "size_bytes": 273,
+      "sha256": "49005c455cf90440e62d62832c9841b22552d0fd419100f63e27ce974951c2cd",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "firestore.rules",
+      "category": "firebase",
+      "size_bytes": 11620,
+      "sha256": "129e92df2cf1dd9fd4c29a4457ebb5d1a780b874d63b699c4316cbef1a78ebd1",
+      "updated_in_current_change_set": true,
+      "role": "Firestore authorization/business rules; preserve flock scoping and admin/member constraints."
+    },
+    {
+      "path": "ios/APP_ICON_SETUP.md",
+      "category": "ios",
+      "size_bytes": 396,
+      "sha256": "a5168a06962f1f3a45338f37fcc9ef252fd669b81bc09bc33f5b3de0d84cd184",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/Generated.xcconfig",
+      "category": "ios",
+      "size_bytes": 660,
+      "sha256": "4d56a31112e5864695cb84ca63a01c750cba3fd9274af33a5aff5b91e33161c3",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/.swift_pm.lock",
+      "category": "ios",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/Packages/.packages/FlutterFramework/Package.swift",
+      "category": "ios",
+      "size_bytes": 464,
+      "sha256": "fe677ca6747a3ac9f4bf036e9604952d1ea4882a22ef776b154840f9acb336c9",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/Packages/.packages/FlutterFramework/Sources/FlutterFramework/FlutterFramework.swift",
+      "category": "ios",
+      "size_bytes": 38,
+      "sha256": "8518fb048c29925943b03de7f45c9d5232c0b46d2cc97d36f83ff501e1ffb9ba",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift",
+      "category": "ios",
+      "size_bytes": 2357,
+      "sha256": "5e9f2005736606883a81556239245b443ada7427b592f20d8e4e1cabb7c7275d",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Sources/FlutterGeneratedPluginSwiftPackage/FlutterGeneratedPluginSwiftPackage.swift",
+      "category": "ios",
+      "size_bytes": 38,
+      "sha256": "8518fb048c29925943b03de7f45c9d5232c0b46d2cc97d36f83ff501e1ffb9ba",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/flutter_lldb_helper.py",
+      "category": "ios",
+      "size_bytes": 1276,
+      "sha256": "05cfe3977fdee593efad2049a4f62d374e55c69cedc8aabeee5566b37acb8384",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/flutter_lldbinit",
+      "category": "ios",
+      "size_bytes": 108,
+      "sha256": "eaec5f5268e3a5024d9703046f4097701107d574d0de7a2d8d81f0bf4644a333",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/ephemeral/flutter_native_integration.env",
+      "category": "ios",
+      "size_bytes": 510,
+      "sha256": "20ad4c5165cac6ba0da8d9a0079f0a80c3d497714d3c13b0be93b81a4e817427",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Flutter/flutter_export_environment.sh",
+      "category": "ios",
+      "size_bytes": 699,
+      "sha256": "ba1f81bd540e94d1725d816a5b6cbb9e3506febeb21329f788e8f40e2a217142",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/README.md",
+      "category": "ios",
+      "size_bytes": 372,
+      "sha256": "30c3457f6be362ed865d10fb66b012393fa30b06839895bdf8deab9012154ff3",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "category": "ios",
+      "size_bytes": 2686,
+      "sha256": "34a338df5a3e007efaa4ea31cdd585389277cd1d6dbb1d2a64e72911cfb31464",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+      "category": "ios",
+      "size_bytes": 461993,
+      "sha256": "8a9e46246d45c3f41f8e0c6884fef8d96f214d4cee9c52bc63c63dbe50c2825a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png",
+      "category": "ios",
+      "size_bytes": 795,
+      "sha256": "b90d94ddbf7806d87344c5e524e89ef738bb902dd1a03d35c53c402a6f253caf",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png",
+      "category": "ios",
+      "size_bytes": 1893,
+      "sha256": "76b7a599171ae029b2ecfb0bc9d418bdd8239a628c0173012a305ff320b5a580",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png",
+      "category": "ios",
+      "size_bytes": 3307,
+      "sha256": "c9ac6bd26921853fc66fe03421646b63c3f7bc9570002e6b4eda65218a0d35a6",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png",
+      "category": "ios",
+      "size_bytes": 1247,
+      "sha256": "f910a0f578a3f29f641d9de4bad43ab92dc37f707657c29c99e41babfb3448d2",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png",
+      "category": "ios",
+      "size_bytes": 3168,
+      "sha256": "8ac4411c5b71d8d3ec47598463f209e3eef83c6706494bcf1990eec5d00693a1",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png",
+      "category": "ios",
+      "size_bytes": 5467,
+      "sha256": "89cb4f1f9d251b7f7ad9492f4766a173ed75eb373d89930b634c80e4fb0714df",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png",
+      "category": "ios",
+      "size_bytes": 1893,
+      "sha256": "76b7a599171ae029b2ecfb0bc9d418bdd8239a628c0173012a305ff320b5a580",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png",
+      "category": "ios",
+      "size_bytes": 4810,
+      "sha256": "3202e47f6966ef6c0387f6ea3319a602d755c8d45b3974371b10f2e4bd2c1f3f",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png",
+      "category": "ios",
+      "size_bytes": 8867,
+      "sha256": "9fa308dc368c1f9f765f3cf6f845cba71aeb283bbcf7113c0b08ae5573a0af1f",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@1x.png",
+      "category": "ios",
+      "size_bytes": 3307,
+      "sha256": "c9ac6bd26921853fc66fe03421646b63c3f7bc9570002e6b4eda65218a0d35a6",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png",
+      "category": "ios",
+      "size_bytes": 8867,
+      "sha256": "9fa308dc368c1f9f765f3cf6f845cba71aeb283bbcf7113c0b08ae5573a0af1f",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png",
+      "category": "ios",
+      "size_bytes": 18419,
+      "sha256": "ebd7f2b3b2ecae12a78b1a119a9478ee890cc27a572c89b8ee4226fce116263e",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png",
+      "category": "ios",
+      "size_bytes": 4602,
+      "sha256": "c43c72186b83f80bfe66100162d1978916754ccddb4ae4c212bb5c9d91016172",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png",
+      "category": "ios",
+      "size_bytes": 13294,
+      "sha256": "5f971bd5539c6afb98e5f60a53eb9ff165849edcb847e168f6bc193ede8af3bb",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png",
+      "category": "ios",
+      "size_bytes": 15839,
+      "sha256": "9d00b55ca122ea13c4133bce971430bf129b08fd6823015abd7684b75f6d12ca",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/GeneratedPluginRegistrant.h",
+      "category": "ios",
+      "size_bytes": 378,
+      "sha256": "a5f88cc6415d2e639d2cb549348b84e02a7fdd0261603b0063abef6fa11f075a",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/GeneratedPluginRegistrant.m",
+      "category": "ios",
+      "size_bytes": 2627,
+      "sha256": "9e7e91015444172b7f438ebe46a5325753e5b43f1036f945cabce0e87698e633",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/GoogleService-Info.plist",
+      "category": "ios",
+      "size_bytes": 889,
+      "sha256": "c6d95dc0566b7a394870cd4f4d5363072d9664eda39aad265d9b208754d603d8",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "ios/Runner/Info.plist",
+      "category": "ios",
+      "size_bytes": 318,
+      "sha256": "103309c90947284af155d8688874b1e3d8f43182f65fda2f5332414a33fa86cd",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "lib/firebase_options.dart",
+      "category": "app",
+      "size_bytes": 1786,
+      "sha256": "ce96ddc7005bb21507664d92442dbf39f693bcbb45a26957d5fce0e342b6ac1a",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:firebase_core/firebase_core.dart",
+        "package:flutter/foundation.dart"
+      ]
+    },
+    {
+      "path": "lib/main.dart",
+      "category": "app",
+      "size_bytes": 2719,
+      "sha256": "2699af0e17526163a65c3ec81d823bb08798adbd443792119299133c43cbc39d",
+      "updated_in_current_change_set": true,
+      "role": "Application entry point, Firebase initialization, Provider setup and root app wiring.",
+      "imports": [
+        "package:flutter/material.dart",
+        "package:firebase_core/firebase_core.dart",
+        "firebase_options.dart",
+        "package:provider/provider.dart",
+        "providers/poultry_provider.dart",
+        "screens/dashboard_screen.dart",
+        "screens/login_screen.dart",
+        "package:firebase_auth/firebase_auth.dart",
+        "services/notification_service.dart"
+      ]
+    },
+    {
+      "path": "lib/models/expense_sales_log.dart",
+      "category": "model",
+      "size_bytes": 8604,
+      "sha256": "7db57bbc1726554d6d57d16cff0b6a4461f3ca0ee5ac7d90632267fce4b6a04d",
+      "updated_in_current_change_set": true,
+      "role": "Financial transaction model including supplier/account/creator metadata.",
+      "imports": [
+        "package:intl/intl.dart",
+        "package:cloud_firestore/cloud_firestore.dart"
+      ]
+    },
+    {
+      "path": "lib/models/flock.dart",
+      "category": "model",
+      "size_bytes": 3006,
+      "sha256": "8e0d2f668a063c752ba42e6325a1c1f9d89d58e6b53a3a16f1dcda4c7ce25fe1",
+      "updated_in_current_change_set": true,
+      "role": "Flock and membership models; membership now carries uid for role updates.",
+      "imports": [
+        "package:cloud_firestore/cloud_firestore.dart"
+      ]
+    },
+    {
+      "path": "lib/models/notification_config.dart",
+      "category": "model",
+      "size_bytes": 4307,
+      "sha256": "d234e17bd7dfd12a490877a163840c61658cd7c8bc1452dcde829fb105dc3c55",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:cloud_firestore/cloud_firestore.dart"
+      ]
+    },
+    {
+      "path": "lib/models/poultry_log.dart",
+      "category": "model",
+      "size_bytes": 4626,
+      "sha256": "18fc240fceedd57cfce423645f6c3bd96d3e88e405f39947bb0ea641bcc7218c",
+      "updated_in_current_change_set": true,
+      "role": "Daily log model including creator/updater metadata.",
+      "imports": [
+        "package:intl/intl.dart",
+        "package:cloud_firestore/cloud_firestore.dart",
+        "../services/farm_config.dart"
+      ]
+    },
+    {
+      "path": "lib/models/supplier.dart",
+      "category": "model",
+      "size_bytes": 1262,
+      "sha256": "82c401842db22b3a80f359da6abb2e48803416941b2effeb75cdfbdefae38c8b",
+      "updated_in_current_change_set": true,
+      "role": "Supplier model; optional category field with backward-compatible serialization.",
+      "imports": []
+    },
+    {
+      "path": "lib/providers/poultry_provider.dart",
+      "category": "provider",
+      "size_bytes": 14732,
+      "sha256": "e7e07b3e286cd1e0efa6334516cc3223d8a26402c678f0e0a2840d487ff414cd",
+      "updated_in_current_change_set": true,
+      "role": "Provider state and forwarding methods for flock/member/supplier operations.",
+      "imports": [
+        "dart:async",
+        "package:flutter/material.dart",
+        "package:firebase_core/firebase_core.dart",
+        "../models/poultry_log.dart",
+        "../models/expense_sales_log.dart",
+        "../models/flock.dart",
+        "../models/supplier.dart",
+        "../services/firebase_service.dart",
+        "../services/farm_config.dart",
+        "../services/expense_category_config.dart",
+        "../services/notification_service.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/admin_panel_screen.dart",
+      "category": "screen",
+      "size_bytes": 32590,
+      "sha256": "2485589bdc18fed2a63541411e6cad18fe1952543b3c59f772f28bb025b8761b",
+      "updated_in_current_change_set": true,
+      "role": "Admin management for suppliers, members, roles, languages, notifications and list-all dialogs.",
+      "imports": [
+        "dart:convert",
+        "dart:typed_data",
+        "package:file_picker/file_picker.dart",
+        "package:flutter/material.dart",
+        "package:intl/intl.dart",
+        "package:provider/provider.dart",
+        "../models/flock.dart",
+        "../models/supplier.dart",
+        "../providers/poultry_provider.dart",
+        "../services/farm_config.dart",
+        "../services/app_sql_export.dart",
+        "../services/sql_file_saver.dart",
+        "../services/cashew_sqlite_importer.dart",
+        "../widgets/app_shell.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/dashboard_screen.dart",
+      "category": "screen",
+      "size_bytes": 33255,
+      "sha256": "2738d0b23129b9954b689ed4768ba7e710d6745dfc89cf8ffd1d70c3391e45c1",
+      "updated_in_current_change_set": true,
+      "role": "Primary dashboard, flock summary, metrics, expenses/earnings, recent transactions and daily logs.",
+      "imports": [
+        "dart:math",
+        "package:flutter/material.dart",
+        "package:provider/provider.dart",
+        "package:intl/intl.dart",
+        "package:firebase_auth/firebase_auth.dart",
+        "../models/expense_sales_log.dart",
+        "../providers/poultry_provider.dart",
+        "../widgets/app_shell.dart",
+        "../services/farm_config.dart",
+        "../services/expense_category_config.dart",
+        "log_form_screen.dart",
+        "log_detail_screen.dart",
+        "expense_sales_form_screen.dart",
+        "settings_screen.dart",
+        "reports_screen.dart",
+        "suppliers_screen.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/expense_records_screen.dart",
+      "category": "screen",
+      "size_bytes": 8372,
+      "sha256": "9df6bf81694959cc63a4a46b60dbc43be7682152651460edf3f3c3c9fa11abaa",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter/material.dart",
+        "package:intl/intl.dart",
+        "package:provider/provider.dart",
+        "../models/expense_sales_log.dart",
+        "../providers/poultry_provider.dart",
+        "../services/expense_category_config.dart",
+        "../widgets/app_shell.dart",
+        "expense_sales_form_screen.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/expense_sales_form_screen.dart",
+      "category": "screen",
+      "size_bytes": 29939,
+      "sha256": "bda639cfd4ed1a66eed5aa54d871d13db53c15e289dc7407ad36294ff764b429",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter/material.dart",
+        "package:intl/intl.dart",
+        "package:provider/provider.dart",
+        "../models/expense_sales_log.dart",
+        "../models/supplier.dart",
+        "../providers/poultry_provider.dart",
+        "../services/expense_category_config.dart",
+        "../widgets/app_shell.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/log_detail_screen.dart",
+      "category": "screen",
+      "size_bytes": 4786,
+      "sha256": "95328e875a45ea0f23012707eca9822781c254b4c9f26dedc0fd72ac7de72669",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter/material.dart",
+        "package:intl/intl.dart",
+        "../models/poultry_log.dart",
+        "log_form_screen.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/log_form_screen.dart",
+      "category": "screen",
+      "size_bytes": 14151,
+      "sha256": "a358002a35ff540007aa005a925fd47964d45bcd3a5c787f521477af74be1bdb",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter/material.dart",
+        "package:provider/provider.dart",
+        "package:intl/intl.dart",
+        "../models/poultry_log.dart",
+        "../providers/poultry_provider.dart",
+        "../widgets/app_shell.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/login_screen.dart",
+      "category": "screen",
+      "size_bytes": 34063,
+      "sha256": "a5fcacf1fe2e24836b870bf5a82a787d098568c3b5b26e574b46752c3fb22b69",
+      "updated_in_current_change_set": true,
+      "role": "Email/Google authentication and detailed Google signup completion with invitation detection.",
+      "imports": [
+        "dart:convert",
+        "package:firebase_auth/firebase_auth.dart",
+        "package:flutter/material.dart",
+        "package:image_picker/image_picker.dart",
+        "../services/firebase_service.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/profile_screen.dart",
+      "category": "screen",
+      "size_bytes": 7673,
+      "sha256": "d4ef17e233762040de2b4b3a3ce63d1614de3243e020c4040c8fec6eeae3c462",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:convert",
+        "package:firebase_auth/firebase_auth.dart",
+        "package:flutter/material.dart",
+        "package:image_picker/image_picker.dart",
+        "package:provider/provider.dart",
+        "../providers/poultry_provider.dart",
+        "../widgets/app_shell.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/reports_screen.dart",
+      "category": "screen",
+      "size_bytes": 20459,
+      "sha256": "53c70215992d47fb9fca223720f70127ac2924b708b276c52b745692110e79c6",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter/material.dart",
+        "package:intl/intl.dart",
+        "package:provider/provider.dart",
+        "../models/expense_sales_log.dart",
+        "../models/poultry_log.dart",
+        "../providers/poultry_provider.dart",
+        "../widgets/app_shell.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/settings_screen.dart",
+      "category": "screen",
+      "size_bytes": 18667,
+      "sha256": "f02d7d997fd9364749f9d994188d853ee10d1df6cf337234a45606fd98982fe5",
+      "updated_in_current_change_set": true,
+      "role": "Settings/admin container; uses navigation index 10 after Suppliers insertion.",
+      "imports": [
+        "dart:convert",
+        "dart:typed_data",
+        "package:file_picker/file_picker.dart",
+        "package:flutter/material.dart",
+        "package:intl/intl.dart",
+        "package:provider/provider.dart",
+        "../providers/poultry_provider.dart",
+        "../services/cashew_sqlite_importer.dart",
+        "../services/app_sql_export.dart",
+        "../services/sql_file_saver.dart",
+        "../services/farm_config.dart",
+        "../widgets/app_shell.dart",
+        "expense_records_screen.dart",
+        "admin_panel_screen.dart"
+      ]
+    },
+    {
+      "path": "lib/screens/suppliers_screen.dart",
+      "category": "screen",
+      "size_bytes": 5290,
+      "sha256": "7c172b778a979718ce0f3a60838900018fccb328dd225a242f0237172c000b44",
+      "updated_in_current_change_set": true,
+      "role": "Dedicated supplier directory with search, contact-style cards, category picker, add/edit.",
+      "imports": [
+        "package:flutter/material.dart",
+        "package:provider/provider.dart",
+        "../models/supplier.dart",
+        "../providers/poultry_provider.dart",
+        "../widgets/app_shell.dart",
+        "../services/expense_category_config.dart"
+      ]
+    },
+    {
+      "path": "lib/services/app_sql_export.dart",
+      "category": "service",
+      "size_bytes": 3827,
+      "sha256": "3c3238f5605ef672a08eede96ece0acd41a23aecd26da1c341b1cd5c44f58c31",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:convert",
+        "dart:typed_data",
+        "../models/expense_sales_log.dart"
+      ]
+    },
+    {
+      "path": "lib/services/app_sqlite_queries.dart",
+      "category": "service",
+      "size_bytes": 3157,
+      "sha256": "8818a91c30a3b4e83fdb6037fbce2fc6c8278b98474b2fb9a82203cbd583c2d8",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:convert",
+        "package:sqlite3/common.dart",
+        "app_sql_export.dart"
+      ]
+    },
+    {
+      "path": "lib/services/cashew_migration_parser.dart",
+      "category": "service",
+      "size_bytes": 8082,
+      "sha256": "adc8485b6b15a252c11d33970a85e173abe1de98a7c5f350f907ebe2766c4752",
+      "updated_in_current_change_set": false,
+      "imports": []
+    },
+    {
+      "path": "lib/services/cashew_sqlite_importer.dart",
+      "category": "service",
+      "size_bytes": 102,
+      "sha256": "6cf7c15550db513cf68364663b415990bb9e385a8579bd1011134c62a2391b52",
+      "updated_in_current_change_set": false,
+      "imports": []
+    },
+    {
+      "path": "lib/services/cashew_sqlite_importer_io.dart",
+      "category": "service",
+      "size_bytes": 1385,
+      "sha256": "aa110ad76acc4f69144ed4c497904f755ed57fce58facea7b356b0b16d38ac62",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:convert",
+        "dart:io",
+        "dart:typed_data",
+        "package:sqlite3/sqlite3.dart",
+        "app_sql_export.dart",
+        "app_sqlite_queries.dart",
+        "cashew_sqlite_queries.dart"
+      ]
+    },
+    {
+      "path": "lib/services/cashew_sqlite_importer_web.dart",
+      "category": "service",
+      "size_bytes": 1459,
+      "sha256": "34a9dffe8b4a39f23e5e646e0fc5df54e589208086e54f64be2eb78f0e703804",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:convert",
+        "dart:typed_data",
+        "package:sqlite3/wasm.dart",
+        "package:typed_data/typed_buffers.dart",
+        "app_sql_export.dart",
+        "app_sqlite_queries.dart",
+        "cashew_sqlite_queries.dart"
+      ]
+    },
+    {
+      "path": "lib/services/cashew_sqlite_queries.dart",
+      "category": "service",
+      "size_bytes": 3230,
+      "sha256": "23b9b1a73d9c8c672b62765284e64d048ba4edb2a61aef6456e7e0ca1d5a7d40",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:sqlite3/common.dart"
+      ]
+    },
+    {
+      "path": "lib/services/expense_category_config.dart",
+      "category": "service",
+      "size_bytes": 1962,
+      "sha256": "8d852ae710e1ee069ffa78c1219d0b1477e9849cf0a6e9c55e7366e0577db139",
+      "updated_in_current_change_set": true,
+      "role": "Canonical financial category definitions used by supplier category picker.",
+      "imports": []
+    },
+    {
+      "path": "lib/services/farm_config.dart",
+      "category": "service",
+      "size_bytes": 3168,
+      "sha256": "920515675206cadf12a00a4d7b1795fdb248521876d45ef17b97b7253d43c4ad",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:intl/intl.dart",
+        "package:cloud_firestore/cloud_firestore.dart"
+      ]
+    },
+    {
+      "path": "lib/services/firebase_service.dart",
+      "category": "service",
+      "size_bytes": 52906,
+      "sha256": "32189e3dee5d78c1184c79986dab45fc0e7816efb98316e11993e38e0bfcdd13",
+      "updated_in_current_change_set": true,
+      "role": "Firestore/Auth service; profiles, flocks, members, invitations, suppliers and role updates.",
+      "imports": [
+        "package:cloud_firestore/cloud_firestore.dart",
+        "package:firebase_auth/firebase_auth.dart",
+        "package:intl/intl.dart",
+        "package:flutter/foundation.dart",
+        "package:google_sign_in/google_sign_in.dart",
+        "../models/expense_sales_log.dart",
+        "../models/poultry_log.dart",
+        "../models/flock.dart",
+        "../models/supplier.dart",
+        "poultry_calculation_service.dart",
+        "expense_category_config.dart",
+        "farm_config.dart",
+        "cashew_migration_parser.dart"
+      ]
+    },
+    {
+      "path": "lib/services/notification_service.dart",
+      "category": "service",
+      "size_bytes": 2406,
+      "sha256": "8448dd6af6e22792ced72af522deb198aa161376b66cb19ab5f30f8cdb312a73",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:io",
+        "package:cloud_firestore/cloud_firestore.dart",
+        "package:firebase_auth/firebase_auth.dart",
+        "package:firebase_messaging/firebase_messaging.dart",
+        "package:flutter/foundation.dart",
+        "package:flutter_local_notifications/flutter_local_notifications.dart"
+      ]
+    },
+    {
+      "path": "lib/services/poultry_calculation_service.dart",
+      "category": "service",
+      "size_bytes": 1791,
+      "sha256": "d024b9bda94e400babd851a714a6fe2b002c646974ff91a598a794bfdb2b5178",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "../models/poultry_log.dart"
+      ]
+    },
+    {
+      "path": "lib/services/sql_file_saver.dart",
+      "category": "service",
+      "size_bytes": 86,
+      "sha256": "cff2915dcb29f0f68f26f148cae55bc5cd99ae3b78f047264eea6f6f3484dd1c",
+      "updated_in_current_change_set": false,
+      "imports": []
+    },
+    {
+      "path": "lib/services/sql_file_saver_io.dart",
+      "category": "service",
+      "size_bytes": 351,
+      "sha256": "2cf5e05886b5a886dd6b417a07573309b13e77fa9e58eed2c1b93112c6ccfec9",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:typed_data",
+        "package:file_picker/file_picker.dart"
+      ]
+    },
+    {
+      "path": "lib/services/sql_file_saver_web.dart",
+      "category": "service",
+      "size_bytes": 813,
+      "sha256": "f742c25167b1dd2fc2cd9e02b587e463f787e07158e93a0ab47fed09ba72eda8",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "dart:async",
+        "dart:html",
+        "dart:typed_data"
+      ]
+    },
+    {
+      "path": "lib/widgets/app_shell.dart",
+      "category": "widget",
+      "size_bytes": 13874,
+      "sha256": "06e9808863049096f68e522a6abfa3491632c681b8b414b56c36f1ec065d0f24",
+      "updated_in_current_change_set": true,
+      "role": "Shared responsive navigation shell; sidebar/mobile navigation including Suppliers and Settings.",
+      "imports": [
+        "package:flutter/material.dart",
+        "package:firebase_auth/firebase_auth.dart",
+        "package:provider/provider.dart",
+        "../providers/poultry_provider.dart",
+        "../screens/profile_screen.dart"
+      ]
+    },
+    {
+      "path": "poultry_inventory.iml",
+      "category": "other",
+      "size_bytes": 842,
+      "sha256": "078556ebd66f23eeb43b60557b1ed3d3e0b1a2a6297ccb71ad3b779316c7880d",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "pubspec.lock",
+      "category": "other",
+      "size_bytes": 21164,
+      "sha256": "bcb6acc59c63e2636f96ab442766e42de9b158ae0c3e9b6b80fed96d22e9645c",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "pubspec.yaml",
+      "category": "config",
+      "size_bytes": 4062,
+      "sha256": "dcc7845d3844d257f906a7e3d5eaafcd6bb1afe3ac8543f804c745dc91ff1139",
+      "updated_in_current_change_set": true,
+      "role": "Flutter SDK constraints and package dependencies/assets."
+    },
+    {
+      "path": "scripts/migrations/README.md",
+      "category": "script",
+      "size_bytes": 1493,
+      "sha256": "48e3a0f8f36f449e62b1462f64d71d9f28305569f1c876d4b3cf919bc7958b32",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "scripts/migrations/migrate_expense_categories.js",
+      "category": "script",
+      "size_bytes": 6858,
+      "sha256": "1df6fbb052af8654fd043747896fb94dac2ec2e1ce5186611af82a9612ac2fd9",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "scripts/migrations/package.json",
+      "category": "script",
+      "size_bytes": 257,
+      "sha256": "e20fd920113ec354a6540456dc928907806ccfbd5ac75012ba2e66e34b41f214",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "scripts/prepare_ios.sh",
+      "category": "script",
+      "size_bytes": 115,
+      "sha256": "e87b8b607c039ec4aa2818a342a5841fb94e2a6b169aed479d09cfb5416b605c",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "scripts/setup_sqlite_web.sh",
+      "category": "script",
+      "size_bytes": 288,
+      "sha256": "e72a2f60cd40d5345445fa954ba7845d9c3474cf69b14d15140c6e7af8c7f82d",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "test/app_sql_export_test.dart",
+      "category": "test",
+      "size_bytes": 2013,
+      "sha256": "587265d4cead62954d1181e40bcadcc451d3e4e0af04c05c8971fdf2a172b6dc",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter_test/flutter_test.dart",
+        "package:sqlite3/sqlite3.dart",
+        "package:poultry_inventory/models/expense_sales_log.dart",
+        "package:poultry_inventory/services/app_sql_export.dart",
+        "package:poultry_inventory/services/app_sqlite_queries.dart"
+      ]
+    },
+    {
+      "path": "test/cashew_migration_parser_test.dart",
+      "category": "test",
+      "size_bytes": 5221,
+      "sha256": "51ecef125d950394617e0f0e65683f88d0cf99c5bb52b7c72b8ce75e2181109d",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter_test/flutter_test.dart",
+        "package:poultry_inventory/services/cashew_migration_parser.dart"
+      ]
+    },
+    {
+      "path": "test/expense_sales_log_test.dart",
+      "category": "test",
+      "size_bytes": 4460,
+      "sha256": "52631f53327299ae8dce7838b595a7fddb4fc4d4141c4b6e8b841c138ce583fb",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:cloud_firestore/cloud_firestore.dart",
+        "package:flutter_test/flutter_test.dart",
+        "package:poultry_inventory/models/expense_sales_log.dart"
+      ]
+    },
+    {
+      "path": "test/poultry_calculation_service_test.dart",
+      "category": "test",
+      "size_bytes": 6756,
+      "sha256": "dbbc965b1fc2a1fec5334df86488a5891b75fc4d8111cfc903881754225cdaba",
+      "updated_in_current_change_set": false,
+      "imports": [
+        "package:flutter_test/flutter_test.dart",
+        "package:poultry_inventory/models/poultry_log.dart",
+        "package:poultry_inventory/services/farm_config.dart",
+        "package:poultry_inventory/services/poultry_calculation_service.dart"
+      ]
+    },
+    {
+      "path": "web/favicon.png",
+      "category": "web",
+      "size_bytes": 1411,
+      "sha256": "b816fab2de895916790989c6891216157946081a49ad7d21f122e2a2633c4a25",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/firebase-messaging-sw.js",
+      "category": "web",
+      "size_bytes": 575,
+      "sha256": "4290fa50bceda71a51e3bdb39dfee1cf275237b6dcb548ca573d2ddfdee496b5",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/icons/Icon-192.png",
+      "category": "web",
+      "size_bytes": 21103,
+      "sha256": "5c1a47f7921803d120480e761b997c0152a86f0503283a1ee0f709d958795a43",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/icons/Icon-512.png",
+      "category": "web",
+      "size_bytes": 149276,
+      "sha256": "675afbebac62485c695e48eb38d127f533d48590699cb7a1018b6eb6061c3715",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/icons/Icon-maskable-192.png",
+      "category": "web",
+      "size_bytes": 21103,
+      "sha256": "5c1a47f7921803d120480e761b997c0152a86f0503283a1ee0f709d958795a43",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/icons/Icon-maskable-512.png",
+      "category": "web",
+      "size_bytes": 149276,
+      "sha256": "675afbebac62485c695e48eb38d127f533d48590699cb7a1018b6eb6061c3715",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/index.html",
+      "category": "web",
+      "size_bytes": 857,
+      "sha256": "52ad8ed095daea058d7f41917c40ffd6b67eb6cad9c763f89c93ae4d23b5d842",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/manifest.json",
+      "category": "web",
+      "size_bytes": 985,
+      "sha256": "e90daff0e47b9e9559734bda9db4f688c9759522a5156ed72e749c697064091c",
+      "updated_in_current_change_set": false
+    },
+    {
+      "path": "web/sqlite3.wasm",
+      "category": "web",
+      "size_bytes": 744878,
+      "sha256": "1b3096350a6e58ec7bafa9bf91d840f3631e7b41ea0ad06fb9d1a8c6e8786a5f",
+      "updated_in_current_change_set": false
+    }
+  ],
+  "change_set": [
+    "Supplier sidebar navigation and dedicated supplier directory",
+    "Supplier contact-style UI and category persistence",
+    "Admin supplier preview/List All/edit",
+    "Member contact-style UI, List All/edit, role and language pickers",
+    "Flock membership uid support and member role update",
+    "Google signup completion, profile prefill and invitation detection",
+    "Dashboard flock summary, earnings, recent transactions and daily log avatars",
+    "Settings navigation moved from index 9 to 10",
+    "Backward-compatible supplier model and existing Firestore rules preserved"
+  ]
+}

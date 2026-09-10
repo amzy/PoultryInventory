@@ -303,7 +303,65 @@ class FirebaseService {
 
   Future<List<FlockMembership>> fetchMembers(String flockId) async {
     final snap = await _flocks.doc(flockId).collection('members').get();
-    return snap.docs.map((d) => FlockMembership.fromFirestore(flockId, d.data())).toList();
+    return snap.docs.map((d) => FlockMembership.fromFirestore(flockId, d.data(), uid: d.id)).toList();
+  }
+
+  Future<int> syncInvitedMembers(String flockId) async {
+    if (!await isAdmin()) throw StateError('Only an admin can synchronize members.');
+    final invites = await _flocks.doc(flockId).collection('invitations')
+        .where('status', isEqualTo: 'pending').get();
+    var synced = 0;
+    for (final invite in invites.docs) {
+      final data = invite.data();
+      final email = data['email']?.toString().trim().toLowerCase() ?? '';
+      if (email.isEmpty) continue;
+
+      // Firebase Authentication users cannot be listed from a client app.
+      // The app profile created after sign-in is the safe Firestore-side
+      // bridge from the invited email address to the authenticated UID.
+      final profiles = await _db.collectionGroup('profile')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (profiles.docs.isEmpty) continue;
+
+      final profileDoc = profiles.docs.first;
+      final userRef = profileDoc.reference.parent.parent;
+      if (userRef == null) continue;
+      final uid = userRef.id;
+      final profile = profileDoc.data();
+      final membership = {
+        'role': 'member',
+        'email': email,
+        'displayName': profile['displayName']?.toString() ?? email,
+        'mobileNumber': profile['mobileNumber']?.toString() ?? '',
+        'notificationLanguage': profile['notificationLanguage']?.toString() == 'hi' ? 'hi' : 'en',
+      };
+      await _flocks.doc(flockId).collection('members').doc(uid).set(membership, SetOptions(merge: true));
+      await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set(
+        {...membership, 'flockId': flockId}, SetOptions(merge: true));
+      await invite.reference.update({
+        'status': 'accepted',
+        'acceptedByUid': uid,
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+      synced++;
+    }
+    return synced;
+  }
+
+  Stream<List<FlockMembership>> watchMembers(String flockId) {
+    return _flocks.doc(flockId).collection('members').snapshots().map((snap) {
+      final members = snap.docs
+          .map((d) => FlockMembership.fromFirestore(flockId, d.data(), uid: d.id))
+          .toList();
+      members.sort((a, b) {
+        final aName = (a.displayName.isEmpty ? a.email : a.displayName).toLowerCase();
+        final bName = (b.displayName.isEmpty ? b.email : b.displayName).toLowerCase();
+        return aName.compareTo(bName);
+      });
+      return members;
+    });
   }
 
   Future<void> inviteMember({required String flockId, required String email}) async {
@@ -358,6 +416,49 @@ class FirebaseService {
     await _db.collection('users').doc(memberUid).collection('flock_memberships').doc(flockId).set(data, SetOptions(merge:true));
   }
 
+  Future<void> updateMemberRole(String flockId, String memberUid, String role) async {
+    if (!await isAdmin()) throw StateError('Only an admin can manage roles.');
+    if (role != 'admin' && role != 'member') throw ArgumentError('Invalid role.');
+    if (memberUid == _uid && role != 'admin') throw StateError('The current flock administrator cannot be demoted here.');
+    final data = {'role': role};
+    await _flocks.doc(flockId).collection('members').doc(memberUid).set(data, SetOptions(merge: true));
+    await _db.collection('users').doc(memberUid).collection('flock_memberships').doc(flockId).set(data, SetOptions(merge: true));
+    if (memberUid == _uid) {
+      await _db.collection('users').doc(memberUid).collection('profile').doc('account').set(data, SetOptions(merge: true));
+    }
+  }
+
+  Future<Map<String, dynamic>?> pendingInvitationForEmail(String email) async {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    final snap = await _db.collectionGroup('invitations').where('email', isEqualTo: normalized).where('status', isEqualTo: 'pending').limit(1).get();
+    if (snap.docs.isEmpty) return null;
+    final ref = snap.docs.first.reference.parent.parent;
+    if (ref == null) return {'email': normalized};
+    final flock = await ref.get();
+    final data = <String, dynamic>{'email': normalized, 'flockId': ref.id};
+    if (flock.exists) data['flockName'] = flock.data()?['name']?.toString() ?? 'Invited flock';
+    return data;
+  }
+
+  Future<void> completeGoogleProfile({required String role, required String mobileNumber, int? age}) async {
+    final user = currentUser;
+    if (user == null) throw StateError('You must be signed in.');
+    final invitation = await pendingInvitationForEmail(user.email ?? '');
+    final effectiveRole = invitation != null ? 'member' : role;
+    final data = <String, dynamic>{
+      'email': user.email ?? '',
+      'displayName': user.displayName ?? user.email ?? 'User',
+      'mobileNumber': mobileNumber.trim(),
+      'role': effectiveRole,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (age != null) data['age'] = age;
+    if (user.photoURL != null && user.photoURL!.isNotEmpty) data['photoURL'] = user.photoURL;
+    await _db.collection('users').doc(_uid).collection('profile').doc('account').set(data, SetOptions(merge: true));
+    if (effectiveRole == 'member') await _claimPendingInvitations();
+  }
+
   Future<void> removeMember(String flockId, String memberUid) async {
     if (!await isAdmin()) throw StateError('Only an admin can remove members.');
     if (memberUid == _uid) throw StateError('The flock admin cannot remove themselves.');
@@ -392,11 +493,10 @@ class FirebaseService {
     return _googleSignInInitialization!;
   }
 
-  Future<void> signInWithGoogle() async {
+  Future<UserCredential> signInWithGoogle() async {
     if (kIsWeb) {
       final provider = GoogleAuthProvider();
-      await _auth.signInWithPopup(provider);
-      return;
+      return _auth.signInWithPopup(provider);
     }
 
     await _ensureGoogleSignInInitialized();
@@ -412,7 +512,7 @@ class FirebaseService {
     }
 
     final credential = GoogleAuthProvider.credential(idToken: idToken);
-    await _auth.signInWithCredential(credential);
+    return _auth.signInWithCredential(credential);
   }
 
   Future<void> signInWithEmailAndPassword(String email, String password) async {

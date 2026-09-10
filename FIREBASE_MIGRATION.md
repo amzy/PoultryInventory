@@ -24,7 +24,7 @@ Poultry Inventory uses Firebase Authentication + Cloud Firestore and is designed
 - Mortality cannot exceed Starting Birds.
 - Ending Birds = Starting Birds − Mortality.
 - Total Eggs = rounded(Trays × 30).
-- FCR = Feed Consumed / Trays, or 0 when trays are 0.
+- FCR = Feed Consumed (kg) / Egg Mass (kg), where Egg Mass = Trays × Avg Tray Weight (g) / 1000; FCR is 0 when egg mass is 0.
 - Laying % = Total Eggs / Ending Birds × 100, or 0 when ending birds are 0.
 - Each saved log stores `previousDateKey` and `previousEndingBirds`. Rules verify that the referenced previous log exists and that the bird count matches, including `getAfter()` validation for batched future-log repairs.
 - When a backdated log is inserted, the app recalculates all later logs in chronological order.
