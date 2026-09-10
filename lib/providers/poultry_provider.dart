@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart' hide FirebaseService;
 import '../models/poultry_log.dart';
@@ -22,6 +23,7 @@ class PoultryProvider with ChangeNotifier {
   FarmConfig _farmConfig = FarmConfig.defaults;
   List<Flock> _flocks = [];
   Flock? _activeFlock;
+  String? _localActiveFlockId;
   bool _isAdmin = false;
   String? _errorMessage;
   StreamSubscription? _authSub;
@@ -67,10 +69,14 @@ class PoultryProvider with ChangeNotifier {
       _farmConfig = FarmConfig.defaults;
       return;
     }
-    final currentId = _activeFlock?.id;
+    final prefs = await SharedPreferences.getInstance();
+    final savedId = prefs.getString('active_flock_${_firebase.currentUser?.uid ?? ''}');
+    final currentId = savedId ?? _activeFlock?.id;
     final matches = _flocks.where((f) => f.id == currentId).toList();
     final selected = matches.isNotEmpty ? matches.first : _flocks.first;
     _activeFlock = selected;
+    _localActiveFlockId = selected.id;
+    await prefs.setString('active_flock_${_firebase.currentUser?.uid ?? ''}', selected.id);
     _firebase.setActiveFlock(selected.id);
     final results = await Future.wait<dynamic>([
       _firebase.fetchLogs(),
@@ -103,7 +109,10 @@ class PoultryProvider with ChangeNotifier {
     final flock = matches.isNotEmpty ? matches.first : await _firebase.fetchFlock(flockId);
     if (flock == null) throw StateError('Flock not found.');
     _activeFlock = flock;
+    _localActiveFlockId = flock.id;
     _firebase.setActiveFlock(flock.id);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('active_flock_${_firebase.currentUser?.uid ?? ''}', flock.id);
     await _reload();
   }
 
@@ -144,15 +153,15 @@ class PoultryProvider with ChangeNotifier {
   Future<List<FlockMembership>> fetchFlockMembers(String flockId) => _firebase.fetchMembers(flockId);
   Stream<List<FlockMembership>> watchFlockMembers(String flockId) => _firebase.watchMembers(flockId);
   Future<int> syncInvitedMembers(String flockId) => _firebase.syncInvitedMembers(flockId);
-  Future<void> inviteFlockMember(String email) async { final id = activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.inviteMember(flockId: id, email: email); }
+  Future<void> inviteFlockMember(String email, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.inviteMember(flockId: id, email: email); }
   Future<Map<String, dynamic>?> fetchNotificationSettings() => _firebase.fetchNotificationSettings(activeFlockId);
   Future<void> saveNotificationSettings(Map<String, dynamic> data) => _firebase.saveNotificationSettings(activeFlockId, data);
   Future<Map<String, dynamic>?> fetchNotificationTemplate(String id) => _firebase.fetchNotificationTemplate(activeFlockId, id);
   Future<void> saveNotificationTemplate(String id, Map<String, dynamic> data) => _firebase.saveNotificationTemplate(activeFlockId, id, data);
   Future<void> sendFlockNotification({required String titleEn, required String titleHi, required String bodyEn, required String bodyHi, String? memberUid}) => _firebase.sendFlockNotification(flockId: activeFlockId, titleEn:titleEn, titleHi:titleHi, bodyEn:bodyEn, bodyHi:bodyHi, memberUid:memberUid);
-  Future<void> updateMemberDetails(String uid, {String? mobileNumber, String? notificationLanguage}) => _firebase.updateMemberDetails(activeFlockId, uid, mobileNumber:mobileNumber, notificationLanguage:notificationLanguage);
-  Future<void> updateMemberRole(String uid, String role) => _firebase.updateMemberRole(activeFlockId, uid, role);
-  Future<void> removeFlockMember(String uid) async { final id = activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.removeMember(id, uid); }
+  Future<void> updateMemberDetails(String uid, {String? mobileNumber, String? notificationLanguage, String? flockId}) => _firebase.updateMemberDetails(flockId ?? activeFlockId, uid, mobileNumber:mobileNumber, notificationLanguage:notificationLanguage);
+  Future<void> updateMemberRole(String uid, String role, {String? flockId}) => _firebase.updateMemberRole(flockId ?? activeFlockId, uid, role);
+  Future<void> removeFlockMember(String uid, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.removeMember(id, uid); }
 
   void _resetLocal() {
     _logs = []; _expenseRecords = []; _flocks = []; _activeFlock = null; _feedItems = List<String>.from(FarmConfig.defaultFeedItems); _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories); _suppliers = []; ExpenseCategoryConfig.setSubcategories(_expenseSubcategories); _farmConfig = FarmConfig.defaults; _isAdmin = false; _errorMessage = null; notifyListeners();

@@ -25,6 +25,8 @@ class Flock {
 
   bool get isActive => endDate == null;
 
+  String get state => isActive ? 'running' : 'ended';
+
   factory Flock.fromFirestore(String id, Map<String, dynamic> data) {
     DateTime? asDate(dynamic value) {
       if (value is Timestamp) return value.toDate();

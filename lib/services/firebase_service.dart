@@ -282,9 +282,19 @@ class FirebaseService {
 
   Future<String> createFlock({required String name, required DateTime startDate, required int startingBirds, required String breedName, required List<String> accounts, required List<String> feedItems}) async {
     if (!await isAdmin()) throw StateError('Only an admin can create a flock.');
+
+    // Only running flocks count toward the three-flock limit. Ended flocks
+    // are historical records and can be kept without limit.
+    final existing = await _flocks.get();
+    final runningCount = existing.docs.where((doc) => doc.data()['endDate'] == null).length;
+    if (runningCount >= 3) {
+      throw StateError('You can have a maximum of 3 running flocks.');
+    }
+
     final ref = _flocks.doc();
     final user = currentUser;
     final data = Flock(id: ref.id, name: name, startDate: startDate, endDate: null, startingBirds: startingBirds, breedName: breedName, accounts: accounts, feedItems: feedItems, createdByUid: user?.uid ?? '').toFirestore();
+    data['state'] = 'running';
     await ref.set(data);
     await ref.collection('members').doc(_uid).set({'role': 'admin', 'email': user?.email ?? '', 'displayName': user?.displayName ?? user?.email ?? 'Admin', 'mobileNumber':'', 'notificationLanguage':'en'});
     await _memberships.doc(ref.id).set({'role': 'admin', 'email': user?.email ?? '', 'displayName': user?.displayName ?? user?.email ?? 'Admin', 'mobileNumber':'', 'notificationLanguage':'en'});
@@ -293,12 +303,21 @@ class FirebaseService {
 
   Future<void> updateFlock(Flock flock) async {
     if (!await isAdmin()) throw StateError('Only an admin can configure flocks.');
-    await _flocks.doc(flock.id).set(flock.toFirestore(), SetOptions(merge: true));
+    if (flock.endDate == null) {
+      final existing = await _flocks.get();
+      final runningCount = existing.docs.where((doc) => doc.id != flock.id && doc.data()['endDate'] == null).length;
+      if (runningCount >= 3) {
+        throw StateError('You can have a maximum of 3 running flocks.');
+      }
+    }
+    final data = flock.toFirestore();
+    data['state'] = flock.endDate == null ? 'running' : 'ended';
+    await _flocks.doc(flock.id).set(data, SetOptions(merge: true));
   }
 
   Future<void> endFlock(String flockId, DateTime endDate) async {
     if (!await isAdmin()) throw StateError('Only an admin can end a flock.');
-    await _flocks.doc(flockId).update({'endDate': Timestamp.fromDate(DateTime(endDate.year, endDate.month, endDate.day)), 'updatedAt': FieldValue.serverTimestamp()});
+    await _flocks.doc(flockId).update({'endDate': Timestamp.fromDate(DateTime(endDate.year, endDate.month, endDate.day)), 'state': 'ended', 'updatedAt': FieldValue.serverTimestamp()});
   }
 
   Future<List<FlockMembership>> fetchMembers(String flockId) async {

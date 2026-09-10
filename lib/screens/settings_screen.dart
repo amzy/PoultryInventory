@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/flock.dart';
 import '../providers/poultry_provider.dart';
 import '../services/cashew_sqlite_importer.dart';
 import '../services/app_sql_export.dart';
@@ -417,12 +418,349 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _selectFlockFromSettings(Flock flock) async {
+    if (context.read<PoultryProvider>().activeFlockId == flock.id) return;
+    setState(() => _importing = true);
+    try {
+      await context.read<PoultryProvider>().selectFlock(flock.id);
+      if (!mounted) return;
+      _applyConfig(context.read<PoultryProvider>().farmConfig);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${flock.name} is now the current flock for this app.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to switch flock: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Future<void> _showAddFlockDialog() async {
+    final provider = context.read<PoultryProvider>();
+    if (provider.flocks.where((f) => f.isActive).length >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum of 3 running flocks reached. Ended flocks are not counted.')),
+      );
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final birdsController = TextEditingController();
+    final breedController = TextEditingController();
+    DateTime startDate = DateTime.now();
+
+    try {
+      final created = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add Flock'),
+              content: SizedBox(
+                width: 460,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Flock Name',
+                          hintText: 'e.g. Cobb Flock 2',
+                          prefixIcon: Icon(Icons.home_work_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: birdsController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Starting Bird Count',
+                          prefixIcon: Icon(Icons.pets_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: breedController,
+                        decoration: const InputDecoration(
+                          labelText: 'Breed Name',
+                          prefixIcon: Icon(Icons.category_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: DateFormat('dd MMM yyyy').format(startDate),
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Flock Start Date',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: startDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => startDate = picked);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'New flocks start in Running state. You can end a flock later without deleting its records.',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF60736A)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  onPressed: () async {
+                    final name = nameController.text.trim();
+                    final birds = int.tryParse(birdsController.text.trim());
+                    if (name.isEmpty) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(content: Text('Enter a flock name.')),
+                      );
+                      return;
+                    }
+                    if (birds == null || birds < 0) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(content: Text('Enter a valid starting bird count.')),
+                      );
+                      return;
+                    }
+
+                    try {
+                      await provider.createFlock(
+                        name: name,
+                        startDate: startDate,
+                        startingBirds: birds,
+                        breedName: breedController.text.trim(),
+                        accounts: List<String>.from(FarmConfig.defaultAccounts),
+                        feedItems: provider.feedItems,
+                      );
+                      if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
+                    } catch (e) {
+                      if (dialogContext.mounted) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(content: Text('Unable to add flock: $e')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Flock'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (created == true && mounted) {
+        _applyConfig(provider.farmConfig);
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Flock added and made current for this app.')),
+        );
+      }
+    } finally {
+      nameController.dispose();
+      birdsController.dispose();
+      breedController.dispose();
+    }
+  }
+
+  Future<void> _endFlock(Flock flock) async {
+    if (!flock.isActive) return;
+    final endDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: flock.startDate,
+      lastDate: DateTime.now(),
+    );
+    if (endDate == null || !mounted) return;
+
+    setState(() => _importing = true);
+    try {
+      await context.read<PoultryProvider>().updateActiveFlock(
+        name: flock.name,
+        startDate: flock.startDate,
+        startingBirds: flock.startingBirds,
+        breedName: flock.breedName,
+        accounts: flock.accounts,
+        endDate: endDate,
+      );
+      if (!mounted) return;
+      _applyConfig(context.read<PoultryProvider>().farmConfig);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${flock.name} marked as ended.')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to end flock: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Widget _flockListSection() {
+    return Consumer<PoultryProvider>(
+      builder: (context, provider, _) {
+        final flocks = provider.flocks;
+        final runningCount = flocks.where((f) => f.isActive).length;
+        final currentId = provider.activeFlockId;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7FBF8),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFDCE9E1)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Your Flocks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
+                        SizedBox(height: 3),
+                        Text('The current flock is app-specific. Switching here changes the flock used by this app on this device/browser only.', style: TextStyle(fontSize: 10, height: 1.35, color: Color(0xFF60736A))),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: runningCount >= 3 || _importing ? null : _showAddFlockDialog,
+                    icon: const Icon(Icons.add, size: 17),
+                    label: Text(runningCount >= 3 ? '3 / 3 running' : 'Add Flock'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (flocks.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('No flocks available.', style: TextStyle(fontSize: 11, color: Color(0xFF718179))),
+                )
+              else
+                ...flocks.map((flock) {
+                  final isCurrent = flock.id == currentId;
+                  final running = flock.isActive;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isCurrent ? const Color(0xFFEAF7F0) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: isCurrent ? const Color(0xFFB8DEC8) : const Color(0xFFE1E9E4)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: running ? const Color(0xFFE5F7ED) : const Color(0xFFF0F1F1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(running ? Icons.play_circle_outline : Icons.check_circle_outline, color: running ? const Color(0xFF0E9F6E) : const Color(0xFF7B8580), size: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(child: Text(flock.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1A2D24)))),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: running ? const Color(0xFFDDF4E7) : const Color(0xFFEDEFEF),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(running ? 'Running' : 'Ended', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: running ? const Color(0xFF087A4F) : const Color(0xFF68736E))),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${flock.breedName.isEmpty ? 'Breed not set' : flock.breedName}  •  ${flock.startingBirds} birds  •  Started ${DateFormat('dd MMM yyyy').format(flock.startDate)}${flock.endDate == null ? '' : '  •  Ended ${DateFormat('dd MMM yyyy').format(flock.endDate!)}'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 9.5, color: Color(0xFF718179)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('Current', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF60736A))),
+                            Switch.adaptive(
+                              value: isCurrent,
+                              onChanged: isCurrent || _importing ? null : (_) => _selectFlockFromSettings(flock),
+                              activeTrackColor: const Color(0xFF0E9F6E),
+                            ),
+                          ],
+                        ),
+                        if (running) ...[
+                          const SizedBox(width: 2),
+                          IconButton(
+                            tooltip: 'End flock',
+                            onPressed: _importing ? null : () => _endFlock(flock),
+                            icon: const Icon(Icons.stop_circle_outlined, color: Color(0xFFB45309), size: 21),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _flockConfigurationPanel() => AppCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _panelTitle('Flock Configuration', 'Configure your flock and financial accounts', Icons.home_work_outlined),
-            const SizedBox(height: 16),
+            _panelTitle('Flock Configuration', 'Manage up to 3 running flocks; ended flocks are kept for history', Icons.home_work_outlined),
+            const SizedBox(height: 14),
+            _flockListSection(),
+            const SizedBox(height: 18),
             LayoutBuilder(builder: (context, c) {
               final wide = c.maxWidth >= 700;
               final fields = <Widget>[

@@ -23,6 +23,7 @@ let package = Package(
         .package(name: "flutter_local_notifications", path: "../.packages/flutter_local_notifications-19.5.0"),
         .package(name: "google_sign_in_ios", path: "../.packages/google_sign_in_ios-6.3.3"),
         .package(name: "image_picker_ios", path: "../.packages/image_picker_ios-0.8.13+7"),
+        .package(name: "shared_preferences_foundation", path: "../.packages/shared_preferences_foundation-2.5.7"),
         .package(name: "sqlite3_flutter_libs", path: "../.packages/sqlite3_flutter_libs-0.5.42"),
         .package(name: "FlutterFramework", path: "../.packages/FlutterFramework")
     ],
@@ -38,6 +39,7 @@ let package = Package(
                 .product(name: "flutter-local-notifications", package: "flutter_local_notifications"),
                 .product(name: "google-sign-in-ios", package: "google_sign_in_ios"),
                 .product(name: "image-picker-ios", package: "image_picker_ios"),
+                .product(name: "shared-preferences-foundation", package: "shared_preferences_foundation"),
                 .product(name: "sqlite3-flutter-libs", package: "sqlite3_flutter_libs"),
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ]

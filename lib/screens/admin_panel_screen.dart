@@ -45,6 +45,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   bool _notificationsEnabled = true;
   bool _dailyReminderEnabled = true;
   bool _secondReminderEnabled = false;
+  String? _memberFlockId;
   TimeOfDay _reminderTime = const TimeOfDay(hour: 20, minute: 0);
   TimeOfDay _secondReminderTime = const TimeOfDay(hour: 22, minute: 0);
 
@@ -52,6 +53,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<void> _load() async {
     final p = context.read<PoultryProvider>();
     final f = p.activeFlock;
+    final runningFlocks = p.flocks.where((flock) => flock.isActive).toList();
+    _memberFlockId ??= runningFlocks.isNotEmpty ? runningFlocks.first.id : null;
     if (f == null) return;
     _name.text = f.name; _birds.text = f.startingBirds.toString(); _breed.text = f.breedName; _start = f.startDate; _end = f.endDate;
     for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); for (final c in _subcategories) c.dispose(); _accounts.clear(); _feeds.clear(); _subcategories.clear();
@@ -119,7 +122,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     name.dispose(); birds.dispose();
   }
 
-  Future<void> _invite() async { final email = _email.text.trim(); if (email.isEmpty) { _snack('Enter the registered email address.'); return; } try { await context.read<PoultryProvider>().inviteFlockMember(email); _email.clear(); _snack('Invitation saved. The user will get access after signing in with that registered email.'); } catch (e) { _snack('Unable to add user: $e'); } }
+  Future<void> _invite() async {
+    final email = _email.text.trim();
+    final flockId = _memberFlockId;
+    if (flockId == null || flockId.isEmpty) { _snack('Select a running flock first.'); return; }
+    if (email.isEmpty) { _snack('Enter the registered email address.'); return; }
+    try {
+      await context.read<PoultryProvider>().inviteFlockMember(email, flockId: flockId);
+      _email.clear();
+      _snack('Invitation saved for the selected flock.');
+    } catch (e) { _snack('Unable to add user: $e'); }
+  }
   Future<void> _exportData() async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -318,36 +331,146 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     });
   }
 
-  Widget _membersSection(PoultryProvider p) => _section('Flock Members', Icons.group_outlined, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [Expanded(child: TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Registered email address', border: OutlineInputBorder()))), const SizedBox(width: 8), FilledButton.icon(onPressed: _invite, icon: const Icon(Icons.person_add_alt_1), label: const Text('Add / Invite'))]),
-    const SizedBox(height: 12),
-    StreamBuilder<List<FlockMembership>>(stream: p.activeFlock == null ? const Stream<List<FlockMembership>>.empty() : p.watchFlockMembers(p.activeFlock!.id), builder: (context, snap) {
-      if (snap.connectionState == ConnectionState.waiting && !snap.hasData) return const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator());
-      if (snap.hasError) return Text('Unable to load members: ${snap.error}');
-      final members = snap.data ?? const <FlockMembership>[];
-      Widget card(FlockMembership m) => Card(margin: const EdgeInsets.only(bottom: 8), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE1EAE5))), child: Padding(padding: const EdgeInsets.all(12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        CircleAvatar(radius: 22, backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty ? m.email : m.displayName).trim().isEmpty ? 'U' : (m.displayName.isEmpty ? m.email : m.displayName).trim()[0].toUpperCase(), style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w900))),
-        const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(m.displayName.isEmpty ? m.email : m.displayName, style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 3), Text(m.email, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))), const SizedBox(height: 3), Text(m.mobileNumber.isEmpty ? 'No mobile number' : m.mobileNumber, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))), const SizedBox(height: 9), Wrap(spacing: 8, runSpacing: 6, children: [
-          DropdownButton<String>(value: m.role, items: const [DropdownMenuItem(value:'admin',child:Text('Admin')),DropdownMenuItem(value:'member',child:Text('Member'))], onChanged: m.uid.isEmpty || m.uid == p.activeFlock?.createdByUid ? null : (v) async { if(v!=null){try{await p.updateMemberRole(m.uid,v);setState((){});_snack('Member role updated.');}catch(e){_snack('Unable to update role: $e');}} }),
-          DropdownButton<String>(value: m.notificationLanguage, items: const [DropdownMenuItem(value:'en',child:Text('English')),DropdownMenuItem(value:'hi',child:Text('हिंदी'))], onChanged: (v) { if(v!=null) p.updateMemberDetails(m.flockId,mobileNumber:m.mobileNumber,notificationLanguage:v); }),
-          OutlinedButton.icon(onPressed:() => _editMember(p,m), icon:const Icon(Icons.edit_outlined,size:16), label:const Text('Edit')),
-          if (m.uid.isNotEmpty && m.uid != p.activeFlock?.createdByUid) IconButton(tooltip:'Remove member', icon:const Icon(Icons.delete_outline,color:Color(0xFFD32F2F)), onPressed:() => _confirmRemoveMember(p,m)),
-        ])]))
-      ])));
-      return Column(children: [
-        ...members.take(5).map(card),
-        if (members.length > 5) Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => _showAllMembers(p, members), icon: const Icon(Icons.list_alt_outlined), label: Text('List All (${members.length})'))),
-      ]);
-    })
-  ]));
+  Widget _membersSection(PoultryProvider p) {
+    final runningFlocks = p.flocks.where((f) => f.isActive).toList();
+    final selectedId = runningFlocks.any((f) => f.id == _memberFlockId)
+        ? _memberFlockId
+        : (runningFlocks.isNotEmpty ? runningFlocks.first.id : null);
+    final selectedFlock = selectedId == null
+        ? null
+        : runningFlocks.firstWhere((f) => f.id == selectedId);
 
+    if (_memberFlockId != selectedId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _memberFlockId = selectedId);
+      });
+    }
+
+    return _section('Flock Members', Icons.group_outlined, Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (runningFlocks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('No running flocks are available. Add a running flock before adding or requesting members.'),
+          )
+        else ...[
+          DropdownButtonFormField<String>(
+            value: selectedId,
+            decoration: const InputDecoration(
+              labelText: 'Select running flock',
+              prefixIcon: Icon(Icons.pets_outlined),
+              border: OutlineInputBorder(),
+            ),
+            items: runningFlocks.map((f) => DropdownMenuItem<String>(
+              value: f.id,
+              child: Text(f.name),
+            )).toList(),
+            onChanged: (value) {
+              if (value != null) setState(() => _memberFlockId = value);
+            },
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Registered email address',
+                border: OutlineInputBorder(),
+              ),
+            )),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: _invite,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Add / Invite'),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            'Members shown below belong to ${selectedFlock?.name ?? 'the selected flock'}. The picker does not change the app\'s current flock.',
+            style: const TextStyle(fontSize: 10.5, color: Color(0xFF667970)),
+          ),
+          const SizedBox(height: 12),
+          StreamBuilder<List<FlockMembership>>(
+            stream: selectedId == null ? const Stream<List<FlockMembership>>.empty() : p.watchFlockMembers(selectedId),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                return const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator());
+              }
+              if (snap.hasError) return Text('Unable to load members: ${snap.error}');
+              final members = snap.data ?? const <FlockMembership>[];
+              Widget card(FlockMembership m) {
+                final isOwner = m.uid.isNotEmpty && m.uid == selectedFlock?.createdByUid;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE1EAE5))),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: const Color(0xFFE8F2EE),
+                        child: Text(
+                          (m.displayName.isEmpty ? m.email : m.displayName).trim().isEmpty ? 'U' : (m.displayName.isEmpty ? m.email : m.displayName).trim()[0].toUpperCase(),
+                          style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(m.displayName.isEmpty ? m.email : m.displayName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 3),
+                        Text(m.email, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))),
+                        const SizedBox(height: 3),
+                        Text(m.mobileNumber.isEmpty ? 'No mobile number' : m.mobileNumber, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))),
+                        const SizedBox(height: 9),
+                        Wrap(spacing: 8, runSpacing: 6, children: [
+                          DropdownButton<String>(
+                            value: m.role,
+                            items: const [DropdownMenuItem(value: 'admin', child: Text('Admin')), DropdownMenuItem(value: 'member', child: Text('Member'))],
+                            onChanged: m.uid.isEmpty || isOwner ? null : (v) async {
+                              if (v != null) {
+                                try { await p.updateMemberRole(m.uid, v, flockId: m.flockId); _snack('Member role updated.'); }
+                                catch (e) { _snack('Unable to update role: $e'); }
+                              }
+                            },
+                          ),
+                          DropdownButton<String>(
+                            value: m.notificationLanguage,
+                            items: const [DropdownMenuItem(value: 'en', child: Text('English')), DropdownMenuItem(value: 'hi', child: Text('हिंदी'))],
+                            onChanged: (v) {
+                              if (v != null) p.updateMemberDetails(m.uid, flockId: m.flockId, mobileNumber: m.mobileNumber, notificationLanguage: v);
+                            },
+                          ),
+                          OutlinedButton.icon(onPressed: () => _editMember(p, m), icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('Edit')),
+                          if (m.uid.isNotEmpty && !isOwner)
+                            IconButton(tooltip: 'Remove member', icon: const Icon(Icons.delete_outline, color: Color(0xFFD32F2F)), onPressed: () => _confirmRemoveMember(p, m)),
+                        ])
+                      ])),
+                    ]),
+                  ),
+                );
+              }
+              return Column(children: [
+                ...members.take(5).map(card),
+                if (members.length > 5)
+                  Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => _showAllMembers(p, members), icon: const Icon(Icons.list_alt_outlined), label: Text('List All (${members.length})'))),
+              ]);
+            },
+          ),
+        ],
+      ],
+    ));
+  }
 
   Future<void> _showAllMembers(PoultryProvider p, List<FlockMembership> members) async {
-    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('All Members'), content: SizedBox(width: 560, height: 500, child: ListView.separated(itemCount: members.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, i) { final m=members[i]; return ListTile(leading: CircleAvatar(backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty?m.email:m.displayName).isEmpty?'U':(m.displayName.isEmpty?m.email:m.displayName)[0].toUpperCase(),style:const TextStyle(color:Color(0xFF087A4F)))), title: Text(m.displayName.isEmpty?m.email:m.displayName), subtitle: Text('${m.email} • ${m.role}'), trailing: Wrap(spacing:4, children:[IconButton(tooltip:'Edit',icon:const Icon(Icons.edit_outlined),onPressed:(){Navigator.pop(ctx);_editMember(p,m);}), if (m.uid.isNotEmpty && m.uid != p.activeFlock?.createdByUid) IconButton(tooltip:'Remove member',icon:const Icon(Icons.delete_outline,color:Color(0xFFD32F2F)),onPressed:(){Navigator.pop(ctx);_confirmRemoveMember(p,m);})]),); })), actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('All Members'), content: SizedBox(width: 560, height: 500, child: ListView.separated(itemCount: members.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, i) { final m=members[i]; return ListTile(leading: CircleAvatar(backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty?m.email:m.displayName).isEmpty?'U':(m.displayName.isEmpty?m.email:m.displayName)[0].toUpperCase(),style:const TextStyle(color:Color(0xFF087A4F)))), title: Text(m.displayName.isEmpty?m.email:m.displayName), subtitle: Text('${m.email} • ${m.role}'), trailing: Wrap(spacing:4, children:[IconButton(tooltip:'Edit',icon:const Icon(Icons.edit_outlined),onPressed:(){Navigator.pop(ctx);_editMember(p,m);}), if (m.uid.isNotEmpty && m.uid != (p.flocks.where((f) => f.id == m.flockId).isEmpty ? '' : p.flocks.firstWhere((f) => f.id == m.flockId).createdByUid)) IconButton(tooltip:'Remove member',icon:const Icon(Icons.delete_outline,color:Color(0xFFD32F2F)),onPressed:(){Navigator.pop(ctx);_confirmRemoveMember(p,m);})]),); })), actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
   }
 
   Future<void> _confirmRemoveMember(PoultryProvider p, FlockMembership m) async {
-    if (m.uid.isEmpty || m.uid == p.activeFlock?.createdByUid) return;
+    if (m.uid.isEmpty) return;
     final name = m.displayName.isEmpty ? m.email : m.displayName;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -362,7 +485,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
     if (confirmed != true) return;
     try {
-      await p.removeFlockMember(m.uid);
+      await p.removeFlockMember(m.uid, flockId: m.flockId);
       if (mounted) _snack('Member removed from the flock. Existing records were kept.');
     } catch (e) {
       if (mounted) _snack('Unable to remove member: $e');
@@ -372,7 +495,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<void> _editMember(PoultryProvider p, FlockMembership m) async {
     final c=TextEditingController(text:m.mobileNumber);
     final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text('Member: ${m.displayName.isEmpty?m.email:m.displayName}'),content:TextField(controller:c,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number',border:OutlineInputBorder())),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Save'))]));
-    if(ok==true){try{await p.updateMemberDetails(m.flockId,mobileNumber:c.text);_snack('Member details updated.');setState((){});}catch(e){_snack('Unable to update member: $e');}}
+    if(ok==true){try{await p.updateMemberDetails(m.uid, flockId: m.flockId, mobileNumber:c.text);_snack('Member details updated.');setState((){});}catch(e){_snack('Unable to update member: $e');}}
     c.dispose();
   }
 

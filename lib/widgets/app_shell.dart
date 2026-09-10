@@ -62,14 +62,21 @@ class PoultryAppShell extends StatelessWidget {
             child: Column(
               children: [
                 if (MediaQuery.sizeOf(context).width < 900)
-                  headerOverride ?? _MobileHeader(
+                  _MobileHeader(
                     title: title,
                     subtitle: subtitle,
                     onBack: onBack,
                     trailing: trailing,
                   )
                 else
-                  headerOverride ?? _DesktopHeader(title: title, subtitle: subtitle, onBack: onBack, trailing: trailing),
+                  headerOverride ?? _DesktopHeader(
+                    title: title,
+                    subtitle: subtitle,
+                    onBack: onBack,
+                    trailing: trailing,
+                  ),
+                if (MediaQuery.sizeOf(context).width < 900 && headerOverride != null)
+                  headerOverride!,
                 Expanded(child: child),
               ],
             ),
