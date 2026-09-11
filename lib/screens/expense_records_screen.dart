@@ -10,7 +10,8 @@ import 'expense_sales_form_screen.dart';
 class ExpenseRecordsScreen extends StatelessWidget {
   final bool embedded;
   final VoidCallback? onBack;
-  const ExpenseRecordsScreen({super.key, this.embedded = false, this.onBack});
+  final ValueChanged<ExpenseSalesLog>? onEdit;
+  const ExpenseRecordsScreen({super.key, this.embedded = false, this.onBack, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -29,14 +30,6 @@ class ExpenseRecordsScreen extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: onBack ?? () => Navigator.maybePop(context),
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Back to Dashboard'),
-              ),
-            ),
             AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('Transaction Summary', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
               const SizedBox(height: 5),
@@ -212,6 +205,10 @@ class ExpenseRecordsScreen extends StatelessWidget {
   }
 
   Future<void> _edit(BuildContext context, ExpenseSalesLog record) async {
+    if (onEdit != null) {
+      onEdit!(record);
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute(

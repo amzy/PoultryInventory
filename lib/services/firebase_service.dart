@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -117,8 +118,10 @@ class FirebaseService {
         .doc(_uid)
         .get();
     if (!membership.exists) return false;
-    final role = membership.data()?['role']?.toString().trim().toLowerCase();
-    return role == 'admin' || role == 'member';
+    final data = membership.data() ?? const <String, dynamic>{};
+    final role = data['role']?.toString().trim().toLowerCase();
+    final status = data['status']?.toString().trim().toLowerCase() ?? 'active';
+    return (role == 'admin' || role == 'member') && status == 'active';
   }
 
   Future<List<Flock>> fetchFlocks() async {
@@ -169,9 +172,11 @@ class FirebaseService {
       return result;
     }
 
-    await _claimPendingInvitations();
     final current = await _memberships.get();
-    final ids = current.docs.map((d) => d.id).toList();
+    final ids = current.docs.where((d) {
+      final status = d.data()['status']?.toString().trim().toLowerCase() ?? 'active';
+      return status == 'active';
+    }).map((d) => d.id).toList();
     if (ids.isEmpty) return [];
     final result = <Flock>[];
     for (var start = 0; start < ids.length; start += 10) {
@@ -327,46 +332,64 @@ class FirebaseService {
 
   Future<int> syncInvitedMembers(String flockId) async {
     if (!await isAdmin()) throw StateError('Only an admin can synchronize members.');
-    final invites = await _flocks.doc(flockId).collection('invitations')
-        .where('status', isEqualTo: 'pending').get();
+    final invitationRef = _flocks.doc(flockId).collection('invitations');
+    final accepted = await invitationRef.where('status', isEqualTo: 'accepted').get();
     var synced = 0;
-    for (final invite in invites.docs) {
+    final seenUids = <String>{};
+    for (final invite in accepted.docs) {
       final data = invite.data();
       final email = data['email']?.toString().trim().toLowerCase() ?? '';
       if (email.isEmpty) continue;
-
-      // Firebase Authentication users cannot be listed from a client app.
-      // The app profile created after sign-in is the safe Firestore-side
-      // bridge from the invited email address to the authenticated UID.
-      final profiles = await _db.collectionGroup('profile')
-          .where('email', isEqualTo: email)
-          .limit(1)
-          .get();
-      if (profiles.docs.isEmpty) continue;
-
-      final profileDoc = profiles.docs.first;
-      final userRef = profileDoc.reference.parent.parent;
-      if (userRef == null) continue;
-      final uid = userRef.id;
-      final profile = profileDoc.data();
-      final membership = {
-        'role': 'member',
+      String? uid = data['acceptedByUid']?.toString().trim();
+      if (uid == null || uid.isEmpty) {
+        final profiles = await _db.collectionGroup('profile').where('email', isEqualTo: email).limit(1).get();
+        if (profiles.docs.isNotEmpty) uid = profiles.docs.first.reference.parent.parent?.id;
+      }
+      if (uid == null || uid.isEmpty || seenUids.contains(uid)) continue;
+      Map<String, dynamic> profile = const <String, dynamic>{};
+      try {
+        final profileSnap = await _db.collection('users').doc(uid).collection('profile').doc('account').get();
+        if (profileSnap.exists) profile = profileSnap.data() ?? const <String, dynamic>{};
+      } catch (_) {}
+      final membership = <String, dynamic>{
+        'role': data['role']?.toString() == 'admin' ? 'admin' : 'member',
+        'status': data['memberStatus']?.toString() == 'suspended' ? 'suspended' : 'active',
         'email': email,
-        'displayName': profile['displayName']?.toString() ?? email,
-        'mobileNumber': profile['mobileNumber']?.toString() ?? '',
+        'displayName': profile['displayName']?.toString().trim().isNotEmpty == true ? profile['displayName'].toString() : (data['displayName']?.toString() ?? email),
+        'mobileNumber': profile['mobileNumber']?.toString() ?? data['mobileNumber']?.toString() ?? '',
         'notificationLanguage': profile['notificationLanguage']?.toString() == 'hi' ? 'hi' : 'en',
       };
       await _flocks.doc(flockId).collection('members').doc(uid).set(membership, SetOptions(merge: true));
-      await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set(
-        {...membership, 'flockId': flockId}, SetOptions(merge: true));
-      await invite.reference.update({
-        'status': 'accepted',
-        'acceptedByUid': uid,
-        'acceptedAt': FieldValue.serverTimestamp(),
-      });
-      synced++;
+      await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set({...membership, 'flockId': flockId}, SetOptions(merge: true));
+      if ((data['acceptedByUid']?.toString().trim() ?? '').isEmpty) await invite.reference.update({'acceptedByUid': uid});
+      seenUids.add(uid); synced++;
     }
     return synced;
+  }
+
+  Stream<List<FlockMembership>> watchMemberStatuses(String flockId) {
+    final controller = StreamController<List<FlockMembership>>();
+    List<FlockMembership> members = [];
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> invites = [];
+    void emit() {
+      final byKey = <String, FlockMembership>{};
+      for (final m in members) byKey['uid:${m.uid}'] = m;
+      for (final d in invites) {
+        final x = d.data();
+        final status = ['pending','declined'].contains(x['status']?.toString()) ? x['status'].toString() : null;
+        if (status == null) continue;
+        final email = x['email']?.toString() ?? '';
+        final key = 'invite:${d.id}';
+        byKey[key] = FlockMembership(flockId: flockId, uid: x['acceptedByUid']?.toString() ?? '', role: x['role']?.toString() == 'admin' ? 'admin' : 'member', email: email, displayName: x['displayName']?.toString() ?? email, status: status, invitationReported: x['permanentlyReported'] == true);
+      }
+      final list = byKey.values.toList();
+      list.sort((a,b) => a.status.compareTo(b.status) != 0 ? a.status.compareTo(b.status) : (a.displayName.isEmpty ? a.email : a.displayName).toLowerCase().compareTo((b.displayName.isEmpty ? b.email : b.displayName).toLowerCase()));
+      if (!controller.isClosed) controller.add(list);
+    }
+    final a = _flocks.doc(flockId).collection('members').snapshots().listen((snap) { members = snap.docs.map((d) => FlockMembership.fromFirestore(flockId, d.data(), uid:d.id)).toList(); emit(); }, onError: controller.addError);
+    final b = _flocks.doc(flockId).collection('invitations').snapshots().listen((snap) { invites = snap.docs; emit(); }, onError: controller.addError);
+    controller.onCancel = () async { await a.cancel(); await b.cancel(); await controller.close(); };
+    return controller.stream;
   }
 
   Stream<List<FlockMembership>> watchMembers(String flockId) {
@@ -387,11 +410,36 @@ class FirebaseService {
     if (!await isAdmin()) throw StateError('Only an admin can add members.');
     final normalized = email.trim().toLowerCase();
     if (normalized.isEmpty) throw StateError('Enter a registered email address.');
-    await _flocks.doc(flockId).collection('invitations').doc(normalized).set({
+    final ref = _flocks.doc(flockId).collection('invitations').doc(normalized);
+    final existing = await ref.get();
+    final data = existing.data();
+    if (existing.exists && data?['status'] == 'declined' && data?['permanentlyReported'] == true) {
+      throw StateError('This invitation was permanently reported by the member and cannot be resent.');
+    }
+    await ref.set({
       'email': normalized,
       'status': 'pending',
       'createdByUid': _uid,
       'createdAt': FieldValue.serverTimestamp(),
+      if (data?['declineCount'] is num) 'declineCount': (data!['declineCount'] as num).toInt(),
+      'permanentlyReported': false,
+      'resentAt': existing.exists ? FieldValue.serverTimestamp() : null,
+      'resentByUid': existing.exists ? _uid : null,
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> resendInvitation(String flockId, String invitationId) async {
+    if (!await isAdmin()) throw StateError('Only an admin can resend invitations.');
+    final ref = _flocks.doc(flockId).collection('invitations').doc(invitationId);
+    final snap = await ref.get();
+    if (!snap.exists) throw StateError('Invitation not found.');
+    final data = snap.data()!;
+    if (data['status'] != 'declined') throw StateError('Only declined invitations can be resent.');
+    if (data['permanentlyReported'] == true) throw StateError('This invitation was permanently reported by the member and cannot be resent.');
+    await ref.update({
+      'status': 'pending',
+      'resentAt': FieldValue.serverTimestamp(),
+      'resentByUid': _uid,
     });
   }
 
@@ -447,17 +495,59 @@ class FirebaseService {
     }
   }
 
-  Future<Map<String, dynamic>?> pendingInvitationForEmail(String email) async {
+  Future<List<Map<String, dynamic>>> pendingInvitationsForEmail(String email) async {
     final normalized = email.trim().toLowerCase();
-    if (normalized.isEmpty) return null;
-    final snap = await _db.collectionGroup('invitations').where('email', isEqualTo: normalized).where('status', isEqualTo: 'pending').limit(1).get();
-    if (snap.docs.isEmpty) return null;
-    final ref = snap.docs.first.reference.parent.parent;
-    if (ref == null) return {'email': normalized};
-    final flock = await ref.get();
-    final data = <String, dynamic>{'email': normalized, 'flockId': ref.id};
-    if (flock.exists) data['flockName'] = flock.data()?['name']?.toString() ?? 'Invited flock';
-    return data;
+    if (normalized.isEmpty) return const [];
+    final snap = await _db.collectionGroup('invitations')
+        .where('email', isEqualTo: normalized)
+        .where('status', isEqualTo: 'pending')
+        .get();
+    final result = <Map<String, dynamic>>[];
+    for (final doc in snap.docs) {
+      final flockRef = doc.reference.parent.parent;
+      if (flockRef == null) continue;
+      final flock = await flockRef.get();
+      final flockData = flock.data();
+      if (!flock.exists || flockData == null || flockData['state'] == 'ended') continue;
+      result.add({
+        'invitationId': doc.id,
+        'flockId': flockRef.id,
+        'flockName': flockData['name']?.toString() ?? 'Invited flock',
+        ...doc.data(),
+      });
+    }
+    return result;
+  }
+
+  Future<Map<String, dynamic>?> pendingInvitationForEmail(String email) async {
+    final invitations = await pendingInvitationsForEmail(email);
+    return invitations.isEmpty ? null : invitations.first;
+  }
+
+  Future<void> acceptInvitation(String flockId, String invitationId) async {
+    final user = currentUser;
+    if (user == null) throw StateError('Sign in first.');
+    final email = user.email?.trim().toLowerCase() ?? '';
+    if (email.isEmpty) throw StateError('Your account does not have an email address.');
+    final ref = _flocks.doc(flockId).collection('invitations').doc(invitationId);
+    final snap = await ref.get();
+    if (!snap.exists || snap.data()?['email']?.toString().toLowerCase() != email || snap.data()?['status'] != 'pending') {
+      throw StateError('Invitation is no longer available.');
+    }
+    final flockSnap = await _flocks.doc(flockId).get();
+    if (!flockSnap.exists || flockSnap.data()?['state'] == 'ended') throw StateError('This flock is no longer running.');
+    final membership = {
+      'role': snap.data()?['role']?.toString() == 'admin' ? 'admin' : 'member',
+      'status': 'active',
+      'email': email,
+      'displayName': user.displayName ?? email,
+      'mobileNumber': '',
+      'notificationLanguage': 'en',
+      'joinedAt': FieldValue.serverTimestamp(),
+    };
+    await _flocks.doc(flockId).collection('members').doc(_uid).set(membership, SetOptions(merge: true));
+    await _memberships.doc(flockId).set({...membership, 'flockId': flockId}, SetOptions(merge: true));
+    await ref.update({'status': 'accepted', 'acceptedByUid': _uid, 'acceptedAt': FieldValue.serverTimestamp()});
   }
 
   Future<void> completeGoogleProfile({required String role, required String mobileNumber, int? age}) async {
@@ -475,7 +565,38 @@ class FirebaseService {
     if (age != null) data['age'] = age;
     if (user.photoURL != null && user.photoURL!.isNotEmpty) data['photoURL'] = user.photoURL;
     await _db.collection('users').doc(_uid).collection('profile').doc('account').set(data, SetOptions(merge: true));
-    if (effectiveRole == 'member') await _claimPendingInvitations();
+    // Invitations are intentionally not auto-accepted. Members must accept from the dashboard.
+  }
+
+  Future<void> setMemberStatus(String flockId, String memberUid, String status) async {
+    if (!await isAdmin()) throw StateError('Only an admin can suspend or resume members.');
+    if (!['active','suspended'].contains(status)) throw ArgumentError('Invalid member status.');
+    if (memberUid == _uid) throw StateError('The flock administrator cannot suspend themselves.');
+    final data = {'status': status, 'statusUpdatedAt': FieldValue.serverTimestamp(), 'statusUpdatedByUid': _uid};
+    await _flocks.doc(flockId).collection('members').doc(memberUid).set(data, SetOptions(merge:true));
+    await _db.collection('users').doc(memberUid).collection('flock_memberships').doc(flockId).set(data, SetOptions(merge:true));
+    final invite = await _flocks.doc(flockId).collection('invitations').where('acceptedByUid', isEqualTo: memberUid).limit(1).get();
+    if (invite.docs.isNotEmpty) await invite.docs.first.reference.set({'memberStatus': status}, SetOptions(merge:true));
+  }
+
+  Future<void> declineInvitation(String flockId, String invitationId) async {
+    final user = currentUser;
+    if (user == null) throw StateError('Sign in first.');
+    final ref = _flocks.doc(flockId).collection('invitations').doc(invitationId);
+    final snap = await ref.get();
+    final data = snap.data();
+    if (!snap.exists || data?['email']?.toString().toLowerCase() != user.email?.trim().toLowerCase()) throw StateError('Invitation not found.');
+    if (data?['status'] != 'pending') return;
+    final previousDeclines = (data?['declineCount'] as num?)?.toInt() ?? 0;
+    final nextDeclines = previousDeclines + 1;
+    final permanentlyReported = nextDeclines >= 2;
+    await ref.update({
+      'status': 'declined',
+      'declineCount': nextDeclines,
+      'permanentlyReported': permanentlyReported,
+      'declinedAt': FieldValue.serverTimestamp(),
+      if (permanentlyReported) 'reportedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> removeMember(String flockId, String memberUid) async {
@@ -495,7 +616,7 @@ class FirebaseService {
       final flock = await flockRef.get();
       if (!flock.exists) continue;
       final user = currentUser;
-      final membership = {'role': 'member', 'email': email, 'displayName': user?.displayName ?? email, 'mobileNumber':'', 'notificationLanguage':'en'};
+      final membership = {'role': 'member', 'status': 'active', 'email': email, 'displayName': user?.displayName ?? email, 'mobileNumber':'', 'notificationLanguage':'en'};
       await flockRef.collection('members').doc(_uid).set(membership);
       await _memberships.doc(flockRef.id).set(membership);
       await invite.reference.update({'status': 'accepted', 'acceptedByUid': _uid, 'acceptedAt': FieldValue.serverTimestamp()});
@@ -582,6 +703,49 @@ class FirebaseService {
     await _db.collection('users').doc(_uid).collection('profile').doc('account').set(data, SetOptions(merge: true));
   }
 
+  Future<List<String>> fetchSavedAccounts() async {
+    final snap = await _db.collection('users').doc(_uid).collection('profile').doc('account').get();
+    final data = snap.data() ?? const <String, dynamic>{};
+    final raw = data['savedAccounts'];
+    if (raw is List) {
+      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toSet().toList();
+    }
+    // Backward compatibility: seed the saved account catalog from the
+    // current flock's legacy per-flock accounts when no catalog exists yet.
+    try {
+      final flock = await fetchFlock(_activeFlockId ?? '');
+      final legacy = flock?.accounts ?? const <String>[];
+      if (legacy.isNotEmpty) {
+        await saveSavedAccounts(legacy);
+        return legacy.toSet().toList();
+      }
+    } catch (_) {}
+    return List<String>.from(FarmConfig.defaultAccounts);
+  }
+
+  Future<void> saveSavedAccounts(List<String> accounts) async {
+    final normalized = accounts.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    if (normalized.isEmpty) throw ArgumentError('At least one account is required.');
+    if (normalized.any((e) => e.length > 80)) throw ArgumentError('Account names must be 80 characters or less.');
+    await _db.collection('users').doc(_uid).collection('profile').doc('account').set({
+      'savedAccounts': normalized,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> updateFlockAccounts(String flockId, List<String> accounts) async {
+    if (!await isAdmin()) throw StateError('Only an admin can configure flocks.');
+    final normalized = accounts.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    if (normalized.isEmpty) throw ArgumentError('Select at least one account for the flock.');
+    final flock = await fetchFlock(flockId);
+    if (flock == null) throw StateError('Flock not found.');
+    if (!flock.isActive) throw StateError('Ended flocks cannot be configured.');
+    await _flocks.doc(flockId).update({
+      'accounts': normalized,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> createAccount({
     required String email,
     required String password,
@@ -619,9 +783,7 @@ class FirebaseService {
       // A member can immediately join an already-created flock when the
       // owner has invited this email. Uninvited members simply wait for an
       // invitation; no flock access is granted by signup alone.
-      if (role == 'member') {
-        await _claimPendingInvitations();
-      }
+      // Do not auto-accept invitations. The member explicitly accepts from the dashboard.
     } catch (_) {
       try {
         await user.delete();
@@ -773,6 +935,28 @@ class FirebaseService {
     final normalized = items.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
     await _db.collection('feed_catalog').doc('global').set({
       'items': normalized.isEmpty ? List<String>.from(FarmConfig.defaultFeedItems) : normalized,
+      'updatedByUid': _uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<List<String>> fetchGlobalExpenseCategories() async {
+    if (!isSignedIn) return List<String>.from(ExpenseCategoryConfig.defaultMainCategories);
+    final snap = await _db.collection('expense_categories').doc('global').get();
+    if (!snap.exists) return List<String>.from(ExpenseCategoryConfig.defaultMainCategories);
+    final raw = snap.data()?['items'];
+    if (raw is List) {
+      final items = raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toSet().toList();
+      if (items.isNotEmpty) return items;
+    }
+    return List<String>.from(ExpenseCategoryConfig.defaultMainCategories);
+  }
+
+  Future<void> saveGlobalExpenseCategories(List<String> items) async {
+    if (!await isAdmin()) throw StateError('Only an admin can configure expense categories.');
+    final normalized = items.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    await _db.collection('expense_categories').doc('global').set({
+      'items': normalized.isEmpty ? List<String>.from(ExpenseCategoryConfig.defaultMainCategories) : normalized,
       'updatedByUid': _uid,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));

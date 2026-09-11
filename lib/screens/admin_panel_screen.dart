@@ -65,11 +65,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (_feeds.isEmpty) for (final x in FarmConfig.defaultFeedItems) _feeds.add(TextEditingController(text: x));
     for (final x in p.expenseSubcategories) _subcategories.add(TextEditingController(text: x));
     try {
-      // Reconcile pending invitations with users who have already signed in.
-      // Firebase Authentication users are not directly listable from the
-      // client, so their Firestore profile is used to provision the flock
-      // membership. The member stream below then updates the UI immediately.
-      await p.syncInvitedMembers(f.id);
+      // Reconcile invitations/memberships for every running flock. A member
+      // may already have a user-side flock_memberships record even when the
+      // corresponding flock/members document is missing, so repair the
+      // selected flock's membership mapping as part of the admin load.
+      for (final runningFlock in runningFlocks) {
+        try { await p.syncInvitedMembers(runningFlock.id); } catch (_) {}
+      }
       final settings = await context.read<PoultryProvider>().fetchNotificationSettings();
       if (settings != null && mounted) {
         setState(() {
@@ -128,7 +130,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (flockId == null || flockId.isEmpty) { _snack('Select a running flock first.'); return; }
     if (email.isEmpty) { _snack('Enter the registered email address.'); return; }
     try {
-      await context.read<PoultryProvider>().inviteFlockMember(email, flockId: flockId);
+      final provider = context.read<PoultryProvider>();
+      await provider.inviteFlockMember(email, flockId: flockId);
+      // If the invited account already exists, provision/repair its membership
+      // immediately instead of waiting for the member to sign in again.
+      try { await provider.syncInvitedMembers(flockId); } catch (_) {}
       _email.clear();
       _snack('Invitation saved for the selected flock.');
     } catch (e) { _snack('Unable to add user: $e'); }
@@ -167,13 +173,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     return Consumer<PoultryProvider>(builder: (context, p, _) {
       if (!p.isAdmin) return const Center(child: Text('Admin access required.'));
       final adminSections = <Widget>[
-        _subcategoriesSection(p),
-        const SizedBox(height: 12),
         _suppliersSection(p),
         const SizedBox(height: 12),
         _membersSection(p),
-        const SizedBox(height: 12),
-        _notificationsSection(p),
       ];
       final fullSections = <Widget>[
         _flockSelector(p), const SizedBox(height: 12),
@@ -426,8 +428,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         const SizedBox(height: 3),
                         Text(m.mobileNumber.isEmpty ? 'No mobile number' : m.mobileNumber, style: const TextStyle(fontSize: 11, color: Color(0xFF667970))),
                         const SizedBox(height: 9),
-                        Wrap(spacing: 8, runSpacing: 6, children: [
-                          DropdownButton<String>(
+                        Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                          _memberStatusChip(m.status, reported: m.invitationReported),
+                          if (m.status == 'declined' && !m.invitationReported)
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                try { await p.resendFlockInvitation(m.email, flockId: m.flockId); _snack('Invitation resent.'); }
+                                catch (e) { _snack('Unable to resend invitation: $e'); }
+                              },
+                              icon: const Icon(Icons.send_outlined, size: 16),
+                              label: const Text('Resend'),
+                            ),
+                          if (m.status == 'active' || m.status == 'suspended') DropdownButton<String>(
                             value: m.role,
                             items: const [DropdownMenuItem(value: 'admin', child: Text('Admin')), DropdownMenuItem(value: 'member', child: Text('Member'))],
                             onChanged: m.uid.isEmpty || isOwner ? null : (v) async {
@@ -437,14 +449,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               }
                             },
                           ),
-                          DropdownButton<String>(
-                            value: m.notificationLanguage,
-                            items: const [DropdownMenuItem(value: 'en', child: Text('English')), DropdownMenuItem(value: 'hi', child: Text('हिंदी'))],
-                            onChanged: (v) {
-                              if (v != null) p.updateMemberDetails(m.uid, flockId: m.flockId, mobileNumber: m.mobileNumber, notificationLanguage: v);
-                            },
-                          ),
-                          OutlinedButton.icon(onPressed: () => _editMember(p, m), icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('Edit')),
+                          if (m.uid.isNotEmpty && (m.status == 'active' || m.status == 'suspended') && !isOwner)
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                try { await p.setFlockMemberStatus(m.uid, m.status == 'suspended' ? 'active' : 'suspended', flockId: m.flockId); _snack(m.status == 'suspended' ? 'Member resumed.' : 'Member suspended.'); }
+                                catch (e) { _snack('Unable to change member status: $e'); }
+                              },
+                              icon: Icon(m.status == 'suspended' ? Icons.play_arrow_outlined : Icons.pause_circle_outline, size: 16),
+                              label: Text(m.status == 'suspended' ? 'Resume' : 'Suspend'),
+                            ),
+                          if (m.uid.isNotEmpty && (m.status == 'active' || m.status == 'suspended')) OutlinedButton.icon(onPressed: () => _editMember(p, m), icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('Edit')),
                           if (m.uid.isNotEmpty && !isOwner)
                             IconButton(tooltip: 'Remove member', icon: const Icon(Icons.delete_outline, color: Color(0xFFD32F2F)), onPressed: () => _confirmRemoveMember(p, m)),
                         ])
@@ -465,8 +479,46 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     ));
   }
 
+  Widget _memberStatusChip(String status, {bool reported = false}) {
+    final label = status == 'suspended' ? 'Suspended' : status == 'pending' ? 'Pending' : status == 'declined' ? (reported ? 'Declined • Reported' : 'Declined') : 'Active';
+    final icon = status == 'suspended' ? Icons.pause_circle_outline : status == 'pending' ? Icons.schedule : status == 'declined' ? Icons.cancel_outlined : Icons.check_circle_outline;
+    return Chip(avatar: Icon(icon, size: 15), label: Text(label), visualDensity: VisualDensity.compact);
+  }
+
   Future<void> _showAllMembers(PoultryProvider p, List<FlockMembership> members) async {
-    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('All Members'), content: SizedBox(width: 560, height: 500, child: ListView.separated(itemCount: members.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, i) { final m=members[i]; return ListTile(leading: CircleAvatar(backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty?m.email:m.displayName).isEmpty?'U':(m.displayName.isEmpty?m.email:m.displayName)[0].toUpperCase(),style:const TextStyle(color:Color(0xFF087A4F)))), title: Text(m.displayName.isEmpty?m.email:m.displayName), subtitle: Text('${m.email} • ${m.role}'), trailing: Wrap(spacing:4, children:[IconButton(tooltip:'Edit',icon:const Icon(Icons.edit_outlined),onPressed:(){Navigator.pop(ctx);_editMember(p,m);}), if (m.uid.isNotEmpty && m.uid != (p.flocks.where((f) => f.id == m.flockId).isEmpty ? '' : p.flocks.firstWhere((f) => f.id == m.flockId).createdByUid)) IconButton(tooltip:'Remove member',icon:const Icon(Icons.delete_outline,color:Color(0xFFD32F2F)),onPressed:(){Navigator.pop(ctx);_confirmRemoveMember(p,m);})]),); })), actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('All Members'),
+      content: SizedBox(width: 620, height: 520, child: ListView.separated(
+        itemCount: members.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (_, i) {
+          final m = members[i];
+          final flockMatches = p.flocks.where((f) => f.id == m.flockId).toList();
+          final flock = flockMatches.isEmpty ? null : flockMatches.first;
+          final isOwner = m.uid.isNotEmpty && m.uid == flock?.createdByUid;
+          return ListTile(
+            leading: CircleAvatar(backgroundColor: const Color(0xFFE8F2EE), child: Text((m.displayName.isEmpty ? m.email : m.displayName).isEmpty ? 'U' : (m.displayName.isEmpty ? m.email : m.displayName)[0].toUpperCase(), style: const TextStyle(color: Color(0xFF087A4F)))),
+            title: Text(m.displayName.isEmpty ? m.email : m.displayName),
+            subtitle: Text('${m.email} • ${m.role}'),
+            trailing: Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              _memberStatusChip(m.status, reported: m.invitationReported),
+              if (m.status == 'declined' && !m.invitationReported)
+                IconButton(tooltip: 'Resend invitation', icon: const Icon(Icons.send_outlined), onPressed: () async {
+                  try { await p.resendFlockInvitation(m.email, flockId: m.flockId); Navigator.pop(ctx); _snack('Invitation resent.'); }
+                  catch (e) { _snack('Unable to resend invitation: $e'); }
+                }),
+              if (m.uid.isNotEmpty && (m.status == 'active' || m.status == 'suspended') && !isOwner)
+                IconButton(tooltip: m.status == 'suspended' ? 'Resume member' : 'Suspend member', icon: Icon(m.status == 'suspended' ? Icons.play_arrow_outlined : Icons.pause_circle_outline), onPressed: () async {
+                  try { await p.setFlockMemberStatus(m.uid, m.status == 'suspended' ? 'active' : 'suspended', flockId: m.flockId); Navigator.pop(ctx); _showAllMembers(p, members); }
+                  catch (e) { _snack('Unable to change member status: $e'); }
+                }),
+              if (m.uid.isNotEmpty && !isOwner) IconButton(tooltip: 'Remove member', icon: const Icon(Icons.delete_outline, color: Color(0xFFD32F2F)), onPressed: () { Navigator.pop(ctx); _confirmRemoveMember(p, m); }),
+            ]),
+          );
+        },
+      )),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+    ));
   }
 
   Future<void> _confirmRemoveMember(PoultryProvider p, FlockMembership m) async {

@@ -229,15 +229,6 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
         children: [
-          if (!widget.embedded && widget.existingRecord != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => Navigator.maybePop(context),
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Back'),
-              ),
-            ),
           AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(_editing ? 'Edit Record' : 'Record Details', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF162A21))),
             const SizedBox(height: 5),
@@ -306,7 +297,7 @@ class _ExpenseSalesFormScreenState extends State<ExpenseSalesFormScreen> {
   Widget _mainCategoryPicker() => DropdownButtonFormField<String>(
     value: _selectedMainCategory,
     decoration: _decoration('Main Category / Phase', Icons.account_tree_outlined),
-    items: ExpenseCategoryConfig.mainCategories.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+    items: ExpenseCategoryConfig.activeMainCategories.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
     onChanged: (value) { if (value == null) return; setState(() { _selectedMainCategory = value; final options = ExpenseCategoryConfig.activeSubcategories; _selectedCategory = options.contains(_selectedCategory) ? _selectedCategory : options.first; _resetCategoryFields(); }); },
   );
 

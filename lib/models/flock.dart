@@ -70,8 +70,10 @@ class FlockMembership {
   final String displayName;
   final String mobileNumber;
   final String notificationLanguage;
+  final String status;
+  final bool invitationReported;
 
-  const FlockMembership({this.uid = '', required this.flockId, required this.role, required this.email, required this.displayName, this.mobileNumber = '', this.notificationLanguage = 'en'});
+  const FlockMembership({this.uid = '', required this.flockId, required this.role, required this.email, required this.displayName, this.mobileNumber = '', this.notificationLanguage = 'en', this.status = 'active', this.invitationReported = false});
 
   bool get isAdmin => role == 'admin';
 
@@ -83,5 +85,7 @@ class FlockMembership {
     displayName: data['displayName']?.toString() ?? '',
     mobileNumber: data['mobileNumber']?.toString() ?? '',
     notificationLanguage: data['notificationLanguage']?.toString() == 'hi' ? 'hi' : 'en',
+    status: ['pending','declined','active','suspended'].contains(data['status']?.toString()) ? data['status'].toString() : 'active',
+    invitationReported: data['permanentlyReported'] == true,
   );
 }

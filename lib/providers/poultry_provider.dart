@@ -16,8 +16,13 @@ class PoultryProvider with ChangeNotifier {
   List<PoultryLog> _logs = [];
   List<ExpenseSalesLog> _expenseRecords = [];
   List<String> _feedItems = List<String>.from(FarmConfig.defaultFeedItems);
+  List<String> _expenseCategories = List<String>.from(ExpenseCategoryConfig.defaultMainCategories);
   List<String> _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories);
   List<Supplier> _suppliers = [];
+  List<String> _savedAccounts = List<String>.from(FarmConfig.defaultAccounts);
+  bool _expenseRecordsLoaded = false;
+  bool _expenseRecordsLoading = false;
+  Future<void>? _expenseLoadFuture;
 
   bool _isLoading = false;
   FarmConfig _farmConfig = FarmConfig.defaults;
@@ -30,8 +35,10 @@ class PoultryProvider with ChangeNotifier {
   List<PoultryLog> get logs => List.unmodifiable(_logs);
   List<ExpenseSalesLog> get expenseRecords => List.unmodifiable(_expenseRecords);
   List<String> get feedItems => List.unmodifiable(_feedItems);
+  List<String> get expenseCategories => List.unmodifiable(_expenseCategories);
   List<String> get expenseSubcategories => List.unmodifiable(_expenseSubcategories);
   List<Supplier> get suppliers => List.unmodifiable(_suppliers);
+  List<String> get savedAccounts => List.unmodifiable(_savedAccounts);
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _firebase.isSignedIn;
@@ -72,26 +79,23 @@ class PoultryProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final savedId = prefs.getString('active_flock_${_firebase.currentUser?.uid ?? ''}');
     final currentId = savedId ?? _activeFlock?.id;
-    final matches = _flocks.where((f) => f.id == currentId).toList();
-    final selected = matches.isNotEmpty ? matches.first : _flocks.first;
+    final matches = _flocks.where((f) => f.id == currentId && f.isActive).toList();
+    final running = _flocks.where((f) => f.isActive).toList();
+    final selected = matches.isNotEmpty ? matches.first : (running.isNotEmpty ? running.first : _flocks.first);
     _activeFlock = selected;
     _localActiveFlockId = selected.id;
     await prefs.setString('active_flock_${_firebase.currentUser?.uid ?? ''}', selected.id);
     _firebase.setActiveFlock(selected.id);
-    final results = await Future.wait<dynamic>([
-      _firebase.fetchLogs(),
-      _firebase.fetchExpenseRecords(),
-      _firebase.fetchGlobalFeedItems().catchError((_) => List<String>.from(FarmConfig.defaultFeedItems)),
-      _firebase.fetchGlobalExpenseSubcategories().catchError((_) => List<String>.from(ExpenseCategoryConfig.defaultSubcategories)),
-      _firebase.fetchSuppliers().catchError((_) => <Supplier>[]),
-    ]);
+    // Critical dashboard data is loaded first. Financial records, catalogs and
+    // suppliers are intentionally deferred so the first dashboard frame can
+    // render flock context and daily-log metrics without waiting on several
+    // additional Firestore reads.
+    final logs = await _firebase.fetchLogs();
+    _logs = List<PoultryLog>.from(logs)..sort((a,b)=>b.date.compareTo(a.date));
+    _expenseRecords = [];
+    _expenseRecordsLoaded = false;
+    _expenseRecordsLoading = false;
 
-    final logs = results[0] as List<PoultryLog>;
-    final expenses = results[1] as List<ExpenseSalesLog>;
-    _feedItems = List<String>.from(results[2] as List<String>);
-    _expenseSubcategories = List<String>.from(results[3] as List<String>);
-    _suppliers = List<Supplier>.from(results[4] as List<Supplier>);
-    ExpenseCategoryConfig.setSubcategories(_expenseSubcategories);
     _farmConfig = FarmConfig(
       flockStartDate: selected.startDate,
       startingBirds: selected.startingBirds,
@@ -100,9 +104,66 @@ class PoultryProvider with ChangeNotifier {
       feedItems: _feedItems,
     );
     ExpenseCategoryConfig.setAccounts(_farmConfig.accounts);
-    _logs = List<PoultryLog>.from(logs)..sort((a,b)=>b.date.compareTo(a.date));
-    _expenseRecords = List<ExpenseSalesLog>.from(expenses)..sort((a,b)=>b.date.compareTo(a.date));
+
+    // Secondary settings/catalog data is useful to forms and settings but is
+    // not required for the first dashboard paint.
+    _loadSecondaryDataInBackground();
   }
+
+  Future<void> _loadSecondaryDataInBackground() async {
+    try {
+      final results = await Future.wait<dynamic>([
+        _firebase.fetchGlobalFeedItems().catchError((_) => List<String>.from(FarmConfig.defaultFeedItems)),
+        _firebase.fetchGlobalExpenseCategories().catchError((_) => List<String>.from(ExpenseCategoryConfig.defaultMainCategories)),
+        _firebase.fetchGlobalExpenseSubcategories().catchError((_) => List<String>.from(ExpenseCategoryConfig.defaultSubcategories)),
+        _firebase.fetchSuppliers().catchError((_) => <Supplier>[]),
+        _firebase.fetchSavedAccounts().catchError((_) => List<String>.from(FarmConfig.defaultAccounts)),
+      ]);
+      if (!_firebase.isSignedIn) return;
+      _feedItems = List<String>.from(results[0] as List<String>);
+      _expenseCategories = List<String>.from(results[1] as List<String>);
+      _expenseSubcategories = List<String>.from(results[2] as List<String>);
+      _suppliers = List<Supplier>.from(results[3] as List<Supplier>);
+      _savedAccounts = List<String>.from(results[4] as List<String>);
+      ExpenseCategoryConfig.setMainCategories(_expenseCategories);
+      ExpenseCategoryConfig.setSubcategories(_expenseSubcategories);
+      if (_activeFlock != null) {
+        _farmConfig = FarmConfig(
+          flockStartDate: _activeFlock!.startDate,
+          startingBirds: _activeFlock!.startingBirds,
+          breedName: _activeFlock!.breedName,
+          accounts: _activeFlock!.accounts,
+          feedItems: _feedItems,
+        );
+        ExpenseCategoryConfig.setAccounts(_farmConfig.accounts);
+      }
+      notifyListeners();
+    } catch (_) {
+      // Secondary dashboard/settings data is best-effort. The critical daily
+      // logs already rendered and should not be blocked by these reads.
+    }
+  }
+
+  Future<void> loadExpenseRecords({bool force = false}) {
+    if (_expenseLoadFuture != null && !force) return _expenseLoadFuture!;
+    if (_expenseRecordsLoaded && !force) return Future.value();
+    _expenseRecordsLoading = true;
+    final future = _firebase.fetchExpenseRecords().then((records) {
+      _expenseRecords = List<ExpenseSalesLog>.from(records)..sort((a,b)=>b.date.compareTo(a.date));
+      _expenseRecordsLoaded = true;
+      _expenseRecordsLoading = false;
+      notifyListeners();
+    }).catchError((error) {
+      _expenseRecordsLoading = false;
+      _expenseLoadFuture = null;
+      throw error;
+    });
+    _expenseLoadFuture = future;
+    return future;
+  }
+
+  bool get expenseRecordsLoaded => _expenseRecordsLoaded;
+  bool get expenseRecordsLoading => _expenseRecordsLoading;
 
   Future<void> selectFlock(String flockId) async {
     final matches = _flocks.where((f) => f.id == flockId).toList();
@@ -121,6 +182,11 @@ class PoultryProvider with ChangeNotifier {
     await _reload();
     await selectFlock(id);
     return id;
+  }
+
+  Future<void> endFlock(String flockId, DateTime endDate) async {
+    await _firebase.endFlock(flockId, endDate);
+    await _reload();
   }
 
   Future<void> updateActiveFlock({required String name, required DateTime startDate, required int startingBirds, required String breedName, required List<String> accounts, List<String>? feedItems, DateTime? endDate}) async {
@@ -151,9 +217,13 @@ class PoultryProvider with ChangeNotifier {
   }
 
   Future<List<FlockMembership>> fetchFlockMembers(String flockId) => _firebase.fetchMembers(flockId);
-  Stream<List<FlockMembership>> watchFlockMembers(String flockId) => _firebase.watchMembers(flockId);
+  Stream<List<FlockMembership>> watchFlockMembers(String flockId) => _firebase.watchMemberStatuses(flockId);
   Future<int> syncInvitedMembers(String flockId) => _firebase.syncInvitedMembers(flockId);
   Future<void> inviteFlockMember(String email, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.inviteMember(flockId: id, email: email); }
+  Future<void> resendFlockInvitation(String invitationId, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.resendInvitation(id, invitationId); }
+  Future<List<Map<String, dynamic>>> pendingInvitations() => _firebase.pendingInvitationsForEmail(_firebase.currentUser?.email ?? '');
+  Future<void> acceptFlockInvitation(String flockId, String invitationId) async { await _firebase.acceptInvitation(flockId, invitationId); await _reload(); notifyListeners(); }
+  Future<void> declineFlockInvitation(String flockId, String invitationId) async { await _firebase.declineInvitation(flockId, invitationId); notifyListeners(); }
   Future<Map<String, dynamic>?> fetchNotificationSettings() => _firebase.fetchNotificationSettings(activeFlockId);
   Future<void> saveNotificationSettings(Map<String, dynamic> data) => _firebase.saveNotificationSettings(activeFlockId, data);
   Future<Map<String, dynamic>?> fetchNotificationTemplate(String id) => _firebase.fetchNotificationTemplate(activeFlockId, id);
@@ -162,12 +232,13 @@ class PoultryProvider with ChangeNotifier {
   Future<void> updateMemberDetails(String uid, {String? mobileNumber, String? notificationLanguage, String? flockId}) => _firebase.updateMemberDetails(flockId ?? activeFlockId, uid, mobileNumber:mobileNumber, notificationLanguage:notificationLanguage);
   Future<void> updateMemberRole(String uid, String role, {String? flockId}) => _firebase.updateMemberRole(flockId ?? activeFlockId, uid, role);
   Future<void> removeFlockMember(String uid, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.removeMember(id, uid); }
+  Future<void> setFlockMemberStatus(String uid, String status, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.setMemberStatus(id, uid, status); }
 
   void _resetLocal() {
-    _logs = []; _expenseRecords = []; _flocks = []; _activeFlock = null; _feedItems = List<String>.from(FarmConfig.defaultFeedItems); _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories); _suppliers = []; ExpenseCategoryConfig.setSubcategories(_expenseSubcategories); _farmConfig = FarmConfig.defaults; _isAdmin = false; _errorMessage = null; notifyListeners();
+    _logs = []; _expenseRecords = []; _expenseRecordsLoaded = false; _expenseRecordsLoading = false; _expenseLoadFuture = null; _flocks = []; _activeFlock = null; _feedItems = List<String>.from(FarmConfig.defaultFeedItems); _expenseCategories = List<String>.from(ExpenseCategoryConfig.defaultMainCategories); _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories); _suppliers = []; _savedAccounts = List<String>.from(FarmConfig.defaultAccounts); ExpenseCategoryConfig.setMainCategories(_expenseCategories); ExpenseCategoryConfig.setSubcategories(_expenseSubcategories); _farmConfig = FarmConfig.defaults; _isAdmin = false; _errorMessage = null; notifyListeners();
   }
 
-  Future<void> fetchLogs() async { if(!_firebase.isSignedIn)return; _isLoading=true;notifyListeners();try{await _reload();_errorMessage=null;}catch(e){_errorMessage='Error loading Firebase data: $e';}finally{_isLoading=false;notifyListeners();} }
+  Future<void> fetchLogs() async { if(!_firebase.isSignedIn)return; final reloadExpenses=_expenseRecordsLoaded; _isLoading=true;notifyListeners();try{await _reload();if(reloadExpenses) await loadExpenseRecords(force:true);_errorMessage=null;}catch(e){_errorMessage='Error loading Firebase data: $e';}finally{_isLoading=false;notifyListeners();} }
   Future<void> addLog(PoultryLog log) async {
     try {
       await _firebase.addDailyLog(log);
@@ -185,8 +256,8 @@ class PoultryProvider with ChangeNotifier {
     }
   }
   Future<void> updateLog(PoultryLog log) async { try{await _firebase.updateDailyLog(log);await fetchLogs();}catch(e){_errorMessage='Daily log was not updated: $e';notifyListeners();rethrow;} }
-  Future<void> addExpenseRecord(ExpenseSalesLog record) async { try{await _firebase.addExpenseRecord(record);await fetchLogs();}catch(e){_errorMessage='Expense/sale was not saved: $e';notifyListeners();rethrow;} }
-  Future<void> updateExpenseRecord(ExpenseSalesLog record) async { try{await _firebase.updateExpenseRecord(record);await fetchLogs();}catch(e){_errorMessage='Expense/sale was not updated: $e';notifyListeners();rethrow;} }
+  Future<void> addExpenseRecord(ExpenseSalesLog record) async { try{final wasLoaded=_expenseRecordsLoaded;await _firebase.addExpenseRecord(record);await fetchLogs();if(wasLoaded) await loadExpenseRecords(force:true);}catch(e){_errorMessage='Expense/sale was not saved: $e';notifyListeners();rethrow;} }
+  Future<void> updateExpenseRecord(ExpenseSalesLog record) async { try{final wasLoaded=_expenseRecordsLoaded;await _firebase.updateExpenseRecord(record);await fetchLogs();if(wasLoaded) await loadExpenseRecords(force:true);}catch(e){_errorMessage='Expense/sale was not updated: $e';notifyListeners();rethrow;} }
   Future<int> deleteImportedCashewRecords() async {
     try {
       final deleted = await _firebase.deleteImportedCashewRecords();
@@ -216,6 +287,14 @@ class PoultryProvider with ChangeNotifier {
     _feedItems = items.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
     if (_feedItems.isEmpty) _feedItems = List<String>.from(FarmConfig.defaultFeedItems);
     _farmConfig = FarmConfig(flockStartDate: _farmConfig.flockStartDate, startingBirds: _farmConfig.startingBirds, breedName: _farmConfig.breedName, accounts: _farmConfig.accounts, feedItems: _feedItems);
+    notifyListeners();
+  }
+
+  Future<void> saveExpenseCategories(List<String> items) async {
+    await _firebase.saveGlobalExpenseCategories(items);
+    _expenseCategories = items.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    if (_expenseCategories.isEmpty) _expenseCategories = List<String>.from(ExpenseCategoryConfig.defaultMainCategories);
+    ExpenseCategoryConfig.setMainCategories(_expenseCategories);
     notifyListeners();
   }
 
@@ -285,6 +364,29 @@ class PoultryProvider with ChangeNotifier {
     return (startingBirdsAtDayZero - mortality).clamp(0, startingBirdsAtDayZero);
   }
   double mortalityPercentageOn(DateTime date) => startingBirdsAtDayZero == 0 ? 0 : (startingBirdsAtDayZero - aliveBirdsOn(date)) / startingBirdsAtDayZero * 100;
+  Future<void> saveSavedAccounts(List<String> accounts) async {
+    await _firebase.saveSavedAccounts(accounts);
+    _savedAccounts = accounts.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    notifyListeners();
+  }
+
+  Future<void> updateFlockAccounts(String flockId, List<String> accounts) async {
+    await _firebase.updateFlockAccounts(flockId, accounts);
+    final updated = await _firebase.fetchFlock(flockId);
+    if (updated != null) {
+      final index = _flocks.indexWhere((f) => f.id == flockId);
+      if (index >= 0) {
+        _flocks[index] = updated;
+      }
+      if (_activeFlock?.id == flockId) {
+        _activeFlock = updated;
+        _farmConfig = FarmConfig(flockStartDate: updated.startDate, startingBirds: updated.startingBirds, breedName: updated.breedName, accounts: updated.accounts, feedItems: _feedItems);
+        ExpenseCategoryConfig.setAccounts(updated.accounts);
+      }
+      notifyListeners();
+    }
+  }
+
   Future<void> saveFarmConfig(FarmConfig config) async { await _firebase.saveFarmConfig(config); _farmConfig = config; ExpenseCategoryConfig.setAccounts(config.accounts); notifyListeners(); }
   double get totalFeedKg=>_logs.fold(0.0,(s,e)=>s+e.feedConsumed);
   double get totalEggs=>_logs.fold(0.0,(s,e)=>s+e.totalEggs);

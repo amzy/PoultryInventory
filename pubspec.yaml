@@ -46,6 +46,7 @@ dependencies:
   sqlite3: ^2.9.4
   sqlite3_flutter_libs: ^0.5.42
   typed_data: ^1.4.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

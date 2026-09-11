@@ -25,6 +25,7 @@ let package = Package(
         .package(name: "image_picker_ios", path: "../.packages/image_picker_ios-0.8.13+7"),
         .package(name: "shared_preferences_foundation", path: "../.packages/shared_preferences_foundation-2.5.7"),
         .package(name: "sqlite3_flutter_libs", path: "../.packages/sqlite3_flutter_libs-0.5.42"),
+        .package(name: "url_launcher_ios", path: "../.packages/url_launcher_ios-6.4.2"),
         .package(name: "FlutterFramework", path: "../.packages/FlutterFramework")
     ],
     targets: [
@@ -41,6 +42,7 @@ let package = Package(
                 .product(name: "image-picker-ios", package: "image_picker_ios"),
                 .product(name: "shared-preferences-foundation", package: "shared_preferences_foundation"),
                 .product(name: "sqlite3-flutter-libs", package: "sqlite3_flutter_libs"),
+                .product(name: "url-launcher-ios", package: "url_launcher_ios"),
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ]
         )

@@ -42,6 +42,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   int _selectedIndex = 0;
   DateTime? _backgroundedAt;
   bool _refreshingAfterResume = false;
+  bool _showTransactions = false;
+  ExpenseSalesLog? _editingTransaction;
+  Future<List<Map<String, dynamic>>>? _pendingInvitationsFuture;
 
   @override
   void initState() {
@@ -74,15 +77,57 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   void _navigate(int index) {
-    if (_selectedIndex == index) return;
-    setState(() => _selectedIndex = index);
+    if (_selectedIndex == index && !_showTransactions && _editingTransaction == null) return;
+    setState(() {
+      _selectedIndex = index;
+      _showTransactions = false;
+      _editingTransaction = null;
+    });
   }
 
   void _backToDashboard() {
-    setState(() => _selectedIndex = 0);
+    setState(() {
+      _selectedIndex = 0;
+      _showTransactions = false;
+      _editingTransaction = null;
+    });
+  }
+
+  void _openTransactionsInShell() {
+    setState(() {
+      _selectedIndex = 0;
+      _showTransactions = true;
+      _editingTransaction = null;
+    });
+  }
+
+  void _openTransactionForEdit(ExpenseSalesLog record) {
+    setState(() {
+      _selectedIndex = 0;
+      _showTransactions = true;
+      _editingTransaction = record;
+    });
   }
 
   Widget _currentContent(PoultryProvider provider) {
+    if (_editingTransaction != null) {
+      return ExpenseSalesFormScreen(
+        existingRecord: _editingTransaction,
+        embedded: true,
+        onEmbeddedBack: () => setState(() => _editingTransaction = null),
+        key: ValueKey('edit-transaction-${_editingTransaction!.id}'),
+      );
+    }
+
+    if (_showTransactions) {
+      return ExpenseRecordsScreen(
+        embedded: true,
+        onBack: _backToDashboard,
+        onEdit: _openTransactionForEdit,
+        key: const ValueKey('transactions'),
+      );
+    }
+
     switch (_selectedIndex) {
       case 2:
         return LogFormScreen(
@@ -126,7 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         title: _pageTitle(category),
         subtitle: _pageSubtitle(),
         trailing: null,
-        headerOverride: _selectedIndex == 0 && provider.activeFlock != null
+        headerOverride: (_selectedIndex == 0 && !_showTransactions && _editingTransaction == null && provider.activeFlock != null)
             ? DashboardHeader(
                 flockName: provider.activeFlock!.name,
                 startDate: provider.activeFlock!.startDate,
@@ -134,7 +179,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               )
             : null,
         onNavigate: _navigate,
-        onBack: _selectedIndex == 11 ? _backToDashboard : null,
+        onBack: _editingTransaction != null
+            ? () => setState(() => _editingTransaction = null)
+            : _showTransactions
+                ? _backToDashboard
+                : _selectedIndex == 11
+                    ? _backToDashboard
+                    : null,
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 260),
           reverseDuration: const Duration(milliseconds: 180),
@@ -154,6 +205,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   String _pageTitle(String category) {
+    if (_editingTransaction != null) return 'Edit Expense';
+    if (_showTransactions) return 'Transactions';
     if (_selectedIndex == 0) return 'Dashboard';
     if (_selectedIndex == 1) return 'Reports';
     if (_selectedIndex == 2) return 'Add Daily Log';
@@ -164,6 +217,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   String _pageSubtitle() {
+    if (_editingTransaction != null) return 'Modify an existing financial record';
+    if (_showTransactions) return 'View and manage all farm financial transactions';
     if (_selectedIndex == 0) return 'Overview of your poultry farm';
     if (_selectedIndex == 1) return 'Production, mortality and financial analysis';
     if (_selectedIndex == 2) return 'Track daily flock data';
@@ -181,9 +236,64 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         final wide = constraints.maxWidth >= 1050;
         return ListView(
           padding: EdgeInsets.fromLTRB(wide ? 24 : 14, 8, wide ? 24 : 14, 28),
-          children: _buildDashboardGroups(provider, wide),
+          children: [
+            if (!provider.isAdmin) _memberInvitationsCard(provider),
+            ..._buildDashboardGroups(provider, wide),
+          ],
         );
       }),
+    );
+  }
+
+  Widget _memberInvitationsCard(PoultryProvider provider) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _pendingInvitationsFuture ??= provider.pendingInvitations(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) return const SizedBox.shrink();
+        final invitations = snapshot.data ?? const <Map<String, dynamic>>[];
+        if (invitations.isEmpty) return const SizedBox.shrink();
+        return Card(
+          margin: const EdgeInsets.only(bottom: 14),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFDCE9E2))),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Row(children: [Icon(Icons.mail_outline, color: Color(0xFF087A4F)), SizedBox(width: 8), Text('Flock Invitations', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16))]),
+              const SizedBox(height: 8),
+              ...invitations.map((invite) {
+                final flockId = invite['flockId']?.toString() ?? '';
+                final invitationId = invite['invitationId']?.toString() ?? '';
+                final flockName = invite['flockName']?.toString() ?? 'Flock';
+                final declineCount = (invite['declineCount'] as num?)?.toInt() ?? 0;
+                return Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFFF7FBF9)),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                    const Icon(Icons.pets_outlined, color: Color(0xFF087A4F)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(flockName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Text(declineCount > 0 ? 'Invitation resent after your first decline.' : 'You have been invited to join this flock.', style: const TextStyle(fontSize: 11, color: Color(0xFF667970))),
+                    ])),
+                    TextButton(onPressed: () async {
+                      try { await provider.declineFlockInvitation(flockId, invitationId); if (mounted) setState(() => _pendingInvitationsFuture = null); }
+                      catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to decline invitation: $e'))); }
+                    }, child: Text(declineCount >= 1 ? 'Decline & Report' : 'Decline')),
+                    const SizedBox(width: 4),
+                    FilledButton(onPressed: () async {
+                      try { await provider.acceptFlockInvitation(flockId, invitationId); if (mounted) setState(() => _pendingInvitationsFuture = null); }
+                      catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to accept invitation: $e'))); }
+                    }, child: const Text('Accept')),
+                  ]),
+                );
+              }),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -191,10 +301,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   // controlled by an admin without changing the individual artifact widgets.
   List<Widget> _buildDashboardGroups(PoultryProvider provider, bool wide) {
     const groups = [
+      // Critical, cheap-to-render data stays first: flock + daily log metrics.
       DashboardArtifactGroupConfig(DashboardArtifactGroup.flockContext),
       DashboardArtifactGroupConfig(DashboardArtifactGroup.overview),
+      // Keep the dashboard intentionally lightweight: only the two requested
+      // charts are rendered. Other analytics/financial breakdowns live in Reports.
       DashboardArtifactGroupConfig(DashboardArtifactGroup.analytics),
-      DashboardArtifactGroupConfig(DashboardArtifactGroup.financial),
       DashboardArtifactGroupConfig(DashboardArtifactGroup.activity),
       DashboardArtifactGroupConfig(DashboardArtifactGroup.actions),
     ];
@@ -204,31 +316,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       if (!config.visible) continue;
       final groupWidgets = switch (config.group) {
         DashboardArtifactGroup.flockContext => [
-            LayoutBuilder(builder: (context, c) {
-              final count = c.maxWidth >= 1000 ? 2 : 1;
-              final w = (c.maxWidth - (count - 1) * 10) / count;
-              return Wrap(spacing: 10, runSpacing: 10, children: [
-                SizedBox(width: w, child: _metricCard('Expenses', _money(provider.totalExpenses), Icons.monetization_on_outlined, const Color(0xFFEA580C))),
-                SizedBox(width: w, child: _metricCard('Earnings', _money(provider.totalCredits), Icons.trending_up_outlined, const Color(0xFF087A4F))),
-                SizedBox(width: w, child: _metricCard(
-                  provider.totalCredits >= provider.totalExpenses ? 'Profit' : 'Loss',
-                  _money((provider.totalCredits - provider.totalExpenses).abs()),
-                  provider.totalCredits >= provider.totalExpenses ? Icons.account_balance_wallet_outlined : Icons.warning_amber_rounded,
-                  provider.totalCredits >= provider.totalExpenses ? const Color(0xFF0E9F6E) : const Color(0xFFDC2626),
-                )),
-                SizedBox(width: w, child: _metricCard(
-                  provider.totalCredits >= provider.totalExpenses ? 'Profit %' : 'Loss %',
-                  _percent(provider.totalCredits > provider.totalExpenses
-                      ? ((provider.totalCredits - provider.totalExpenses) / provider.totalCredits)
-                      : (provider.totalExpenses > 0
-                          ? ((provider.totalExpenses - provider.totalCredits) / provider.totalExpenses)
-                          : 0.0)),
-                  provider.totalCredits >= provider.totalExpenses ? Icons.percent : Icons.percent,
-                  provider.totalCredits >= provider.totalExpenses ? const Color(0xFF0E9F6E) : const Color(0xFFDC2626),
-                )),
-              ]);
-            }),
-            const SizedBox(height: 12),
             if (provider.errorMessage != null) _error(provider.errorMessage!),
           ],
         DashboardArtifactGroup.overview => [
@@ -237,25 +324,23 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         DashboardArtifactGroup.analytics => [
             if (wide)
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(child: _eggProduction(provider)),
+                Expanded(child: _eggProductionChart(provider)),
                 const SizedBox(width: 14),
-                Expanded(child: _expenseChart(provider)),
+                Expanded(child: _lazyExpenseCharts(provider)),
               ])
             else ...[
-              _eggProduction(provider),
+              _eggProductionChart(provider),
               const SizedBox(height: 14),
-              _expenseChart(provider),
+              _lazyExpenseCharts(provider),
             ],
           ],
-        DashboardArtifactGroup.financial => [
-            _accountSummary(provider),
-            const SizedBox(height: 14),
-            _expenseGroups(provider),
-          ],
+        // Kept explicit for exhaustive matching; additional financial charts
+        // are intentionally not rendered on the dashboard.
+        DashboardArtifactGroup.financial => const <Widget>[],
         DashboardArtifactGroup.activity => [
-            _recentTransactions(provider),
-            const SizedBox(height: 14),
             _recentLogs(provider),
+            const SizedBox(height: 14),
+            _lazyRecentTransactions(provider),
           ],
         DashboardArtifactGroup.actions => [
             _quickActions(),
@@ -325,194 +410,27 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: color.withValues(alpha: .11), borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: color, size: 22)), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(value, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Color(0xFF12251D))), const SizedBox(height: 2), Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6A7D73)))]))]),
   ));
 
-  Widget _eggProduction(PoultryProvider p) => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const Text('Egg Production', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
-    const SizedBox(height: 12), SizedBox(height: 190, child: CustomPaint(painter: _BarChartPainter(p.logs.take(7).toList().reversed.map((e) => e.totalEggs.toDouble()).toList()), child: const SizedBox.expand())),
-  ]));
+  Widget _eggProductionChart(PoultryProvider p) => _EggProductionChart(provider: p);
 
-  Widget _expenseChart(PoultryProvider p) {
-    final grouped = <String, List<ExpenseSalesLog>>{};
-    for (final record in p.expenseRecords) {
-      final isSale = record.transactionType == 'credit';
-      final key = isSale
-          ? 'Credits / Earnings'
-          : (record.mainCategory.trim().isEmpty ? 'Uncategorized' : record.mainCategory.trim());
-      grouped.putIfAbsent(key, () => []).add(record);
-    }
-    final entries = grouped.entries.toList()
-      ..sort((a, b) => b.value.fold<double>(0, (sum, e) => sum + e.netTotal).compareTo(b.value.fold<double>(0, (sum, e) => sum + e.netTotal)));
-    final values = entries.map((e) => e.value.fold<double>(0, (sum, r) => sum + r.netTotal)).toList();
+  Widget _lazyExpenseCharts(PoultryProvider p) => _DeferredDashboardSection(
+    delay: const Duration(milliseconds: 350),
+    builder: (_) => _FinancialPieChart(provider: p),
+    loadingHeight: 270,
+  );
 
-    return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Expenses / Earnings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
-      const SizedBox(height: 4),
-      const Text('Tap a category to view its transactions', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
-      const SizedBox(height: 8),
-      SizedBox(height: 210, child: values.isEmpty
-          ? const Center(child: Text('No expense or sales transactions yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A))))
-          : Row(children: [
-              Expanded(child: LayoutBuilder(builder: (context, chartConstraints) {
-                final chartSize = Size(chartConstraints.maxWidth, chartConstraints.maxHeight);
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
-                    final index = _pieIndexForTap(details.localPosition, chartSize, values);
-                    if (index != null && index < entries.length) _showCategoryTransactions(entries[index].key, entries[index].value);
-                  },
-                  child: CustomPaint(painter: _PieChartPainter(values, selectedIndex: -1), child: const SizedBox.expand()),
-                );
-              })),
-              const SizedBox(width: 8),
-              Expanded(child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: entries.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 7),
-                itemBuilder: (context, index) {
-                  final amount = values[index];
-                  final sale = entries[index].key == 'Credits / Earnings';
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => _showCategoryTransactions(entries[index].key, entries[index].value),
-                    child: Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
-                      Container(width: 9, height: 9, decoration: BoxDecoration(color: _pieColors[index % _pieColors.length], shape: BoxShape.circle)),
-                      const SizedBox(width: 7),
-                      Expanded(child: Text(entries[index].key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
-                      Text('${sale ? '+' : ''}${_money(amount)}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: sale ? const Color(0xFF087A4F) : const Color(0xFFB45309))),
-                    ])),
-                  );
-                },
-              )),
-            ])),
-    ]));
-  }
+  Widget _lazyRecentTransactions(PoultryProvider p) => _LazyExpenseDashboardSection(
+    provider: p,
+    delay: const Duration(milliseconds: 300),
+    loadingHeight: 180,
+    builder: (_) => _recentTransactions(p),
+  );
 
-  int? _pieIndexForTap(Offset position, Size size, List<double> values) {
-    final total = values.fold<double>(0, (a, b) => a + b);
-    if (total <= 0) return null;
-    final center = Offset(size.width / 2, size.height / 2);
-    final dx = position.dx - center.dx;
-    final dy = position.dy - center.dy;
-    final radius = math.sqrt(dx * dx + dy * dy);
-    final chartRadius = size.shortestSide * .34;
-    if (radius > chartRadius) return null;
-    var angle = math.atan2(dy, dx) + math.pi / 2;
-    if (angle < 0) angle += math.pi * 2;
-    var cursor = 0.0;
-    for (var i = 0; i < values.length; i++) {
-      final sweep = values[i] / total * math.pi * 2;
-      if (angle >= cursor && angle <= cursor + sweep) return i;
-      cursor += sweep;
-    }
-    return null;
-  }
-
-  void _showCategoryTransactions(String category, List<ExpenseSalesLog> records) {
-    final sorted = [...records]..sort((a, b) => b.date.compareTo(a.date));
-    final total = sorted.fold<double>(0, (sum, r) => sum + r.netTotal);
-    final isSale = category == 'Credits / Earnings';
-    showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
-      title: Row(children: [Expanded(child: Text(category)), IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close))]),
-      content: SizedBox(width: 520, height: 420, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${isSale ? 'Earnings' : 'Expenses'} • ${_money(total)}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))),
-        const SizedBox(height: 12),
-        Expanded(child: sorted.isEmpty ? const Align(alignment: Alignment.topLeft, child: Text('No transactions.')) : ListView.separated(itemCount: sorted.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, index) {
-          final r = sorted[index];
-          final detail = [r.account.trim(), r.description.trim(), r.category == category ? '' : r.category, r.unit.trim().isEmpty ? '' : '${r.quantity % 1 == 0 ? r.quantity.toInt() : r.quantity} ${r.unit}'].where((x) => x.isNotEmpty).join(' • ');
-          return ListTile(contentPadding: EdgeInsets.zero, leading: CircleAvatar(radius: 16, backgroundColor: isSale ? const Color(0xFFE4F7EC) : const Color(0xFFFFF3E2), child: Icon(isSale ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, size: 16, color: isSale ? const Color(0xFF087A4F) : const Color(0xFFB45309))), title: Text(_money(r.netTotal), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)), subtitle: Text('${DateFormat('dd MMM yyyy').format(r.date)}${detail.isEmpty ? '' : ' • $detail'}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF71827A))));
-        })),
-      ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
-    ));
-  }
-
-  Widget _accountSummary(PoultryProvider p) {
-    final names = <String>{
-      ...ExpenseCategoryConfig.activeAccounts,
-      ...p.expenseRecords.map((e) => e.account.trim()).where((e) => e.isNotEmpty),
-    }.toList()..sort();
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Accounts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
-          const SizedBox(height: 4),
-          const Text('Expenses and credits grouped by who paid or received the transaction.', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
-          const SizedBox(height: 12),
-          if (names.isEmpty)
-            const Text('No account transactions yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A)))
-          else
-            LayoutBuilder(builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 900 ? 2 : 1;
-              final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: names.map((name) {
-                  final records = p.expenseRecords.where((e) => e.account.trim() == name).toList();
-                  final expenses = records.where((e) => e.transactionType != 'credit').fold<double>(0, (sum, e) => sum + e.netTotal);
-                  final credits = records.where((e) => e.transactionType == 'credit').fold<double>(0, (sum, e) => sum + e.netTotal);
-                  return SizedBox(
-                    width: width,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: const Color(0xFFF7FAF8), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFE1EAE5))),
-                      child: Row(children: [
-                        Container(width: 38, height: 38, decoration: BoxDecoration(color: const Color(0xFFE7F5EE), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.person_outline, color: Color(0xFF087A4F), size: 20)),
-                        const SizedBox(width: 10),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
-                          const SizedBox(height: 6),
-                          Row(children: [
-                            Expanded(child: Text('Expense\n${_money(expenses)}', style: const TextStyle(fontSize: 10, color: Color(0xFFB45309), fontWeight: FontWeight.w700))),
-                            Expanded(child: Text('Credit\n${_money(credits)}', style: const TextStyle(fontSize: 10, color: Color(0xFF087A4F), fontWeight: FontWeight.w700))),
-                            Expanded(child: Text('Net\n${_money(credits - expenses)}', style: const TextStyle(fontSize: 10, color: Color(0xFF52665C), fontWeight: FontWeight.w700))),
-                          ]),
-                        ])),
-                      ]),
-                    ),
-                  );
-                }).toList(),
-              );
-            }),
-        ],
-      ),
-    );
-  }
-
-  Widget _expenseGroups(PoultryProvider p) {
-    final groups = <String, double>{};
-    for (final e in p.expenseRecords.where((e) => e.transactionType != 'credit')) {
-      final key = e.mainCategory.trim().isEmpty ? 'Uncategorized' : e.mainCategory.trim();
-      groups[key] = (groups[key] ?? 0) + e.netTotal;
-    }
-    final entries = groups.entries.toList()..sort((a,b) => b.value.compareTo(a.value));
-    return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Expenses by Main Category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
-      const SizedBox(height: 4),
-      const Text('Phase/group totals. Detailed subcategory totals are available in Expenses.', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
-      const SizedBox(height: 10),
-      if (entries.isEmpty) const Text('No expense groups yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A)))
-      else ...entries.take(8).map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
-        Expanded(child: Text(e.key, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
-        Text(_money(e.value), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0E9F6E))),
-      ]))),
-    ]));
-  }
-
-  Future<void> _openTransactions(BuildContext context) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ExpenseRecordsScreen(),
-      ),
-    );
-    if (mounted) setState(() {});
+  void _openTransactions(BuildContext context) {
+    _openTransactionsInShell();
   }
 
   Widget _recentTransactions(PoultryProvider p) {
-    final records = [...p.expenseRecords]
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final records = p.expenseRecords;
 
     return AppCard(
       child: Column(
@@ -639,6 +557,204 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   String _percent(double value) => '${NumberFormat('0.0').format(value * 100)}%';
 }
 
+
+class _DeferredDashboardSection extends StatefulWidget {
+  final Duration delay;
+  final WidgetBuilder builder;
+  final double loadingHeight;
+
+  const _DeferredDashboardSection({
+    required this.delay,
+    required this.builder,
+    this.loadingHeight = 240,
+  });
+
+  @override
+  State<_DeferredDashboardSection> createState() => _DeferredDashboardSectionState();
+}
+
+class _DeferredDashboardSectionState extends State<_DeferredDashboardSection> {
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(widget.delay, () {
+      if (mounted) setState(() => _ready = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return AppCard(
+        child: SizedBox(
+          height: widget.loadingHeight,
+          child: const Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+      );
+    }
+    return widget.builder(context);
+  }
+}
+
+class _LazyExpenseDashboardSection extends StatefulWidget {
+  final PoultryProvider provider;
+  final Duration delay;
+  final WidgetBuilder builder;
+  final double loadingHeight;
+
+  const _LazyExpenseDashboardSection({
+    required this.provider,
+    required this.delay,
+    required this.builder,
+    required this.loadingHeight,
+  });
+
+  @override
+  State<_LazyExpenseDashboardSection> createState() => _LazyExpenseDashboardSectionState();
+}
+
+class _LazyExpenseDashboardSectionState extends State<_LazyExpenseDashboardSection> {
+  Future<void>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(widget.delay, () {
+      if (!mounted) return;
+      final future = widget.provider.loadExpenseRecords();
+      setState(() => _future = future);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_future == null || !widget.provider.expenseRecordsLoaded) {
+      return AppCard(
+        child: SizedBox(
+          height: widget.loadingHeight,
+          child: const Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+      );
+    }
+    return widget.builder(context);
+  }
+}
+
+class _EggProductionChart extends StatelessWidget {
+  final PoultryProvider provider;
+  const _EggProductionChart({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final logs = provider.logs.take(14).toList().reversed.toList();
+    final values = logs.map((e) => e.totalEggs.toDouble()).toList();
+    return AppCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Egg Production', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
+        const SizedBox(height: 4),
+        const Text('Daily eggs over the latest 14 logs', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
+        const SizedBox(height: 10),
+        SizedBox(height: 235, child: values.isEmpty
+            ? const Center(child: Text('No daily log data yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A))))
+            : CustomPaint(painter: _BarChartPainter(values), child: const SizedBox.expand())),
+        const SizedBox(height: 2),
+        const Center(child: Text('eggs', style: TextStyle(fontSize: 9, color: Color(0xFF71827A)))),
+      ]),
+    );
+  }
+}
+
+class _FinancialPieChart extends StatelessWidget {
+  final PoultryProvider provider;
+  const _FinancialPieChart({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!provider.expenseRecordsLoaded) {
+      return AppCard(child: const SizedBox(height: 300, child: Center(child: CircularProgressIndicator(strokeWidth: 2))));
+    }
+
+    double expenses = 0;
+    double earnings = 0;
+    for (final record in provider.expenseRecords) {
+      if (record.transactionType == 'credit') {
+        earnings += record.netTotal;
+      } else {
+        expenses += record.netTotal;
+      }
+    }
+
+    final total = expenses + earnings;
+    return AppCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Expenses / Earnings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
+        const SizedBox(height: 4),
+        const Text('Overall financial split', style: TextStyle(fontSize: 10, color: Color(0xFF71827A))),
+        const SizedBox(height: 8),
+        SizedBox(height: 235, child: total <= 0
+            ? const Center(child: Text('No financial transactions yet.', style: TextStyle(fontSize: 11, color: Color(0xFF71827A))))
+            : Row(children: [
+                Expanded(child: CustomPaint(painter: _SimplePiePainter([expenses, earnings]), child: const SizedBox.expand())),
+                const SizedBox(width: 16),
+                Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _legend('Expenses', expenses, const Color(0xFFF59E0B)),
+                  const SizedBox(height: 14),
+                  _legend('Earnings', earnings, const Color(0xFF087A4F)),
+                ])),
+              ])),
+      ]),
+    );
+  }
+
+  Widget _legend(String label, double value, Color color) => Row(children: [
+    Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+    const SizedBox(width: 8),
+    Expanded(child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
+    Text(_money(value), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+  ]);
+
+  String _money(double value) => '₹${NumberFormat('#,##0').format(value)}';
+}
+
+class _SimplePiePainter extends CustomPainter {
+  final List<double> values;
+  _SimplePiePainter(this.values);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold<double>(0, (sum, value) => sum + value);
+    if (total <= 0) return;
+    final radius = size.shortestSide * .34;
+    final center = Offset(size.width / 2, size.height / 2);
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    var start = -math.pi / 2;
+    const colors = [Color(0xFFF59E0B), Color(0xFF087A4F)];
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * math.pi * 2;
+      canvas.drawArc(rect, start, sweep, true, Paint()..color = colors[i]);
+      start += sweep;
+    }
+    canvas.drawCircle(center, radius * .52, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SimplePiePainter old) => old.values != values;
+}
+
 class _BarChartPainter extends CustomPainter {
   final List<double> values; _BarChartPainter(this.values);
   @override void paint(Canvas canvas, Size size) {
@@ -649,30 +765,3 @@ class _BarChartPainter extends CustomPainter {
   }
   @override bool shouldRepaint(covariant _BarChartPainter old)=>old.values!=values;
 }
-
-class _PieChartPainter extends CustomPainter {
-  final List<double> values;
-  final int selectedIndex;
-  _PieChartPainter(this.values, {this.selectedIndex = -1});
-  @override void paint(Canvas canvas, Size size) {
-    final total = values.fold<double>(0, (a, b) => a + b);
-    if (total <= 0) return;
-    final r = size.shortestSide * .34;
-    final center = Offset(size.width / 2, size.height / 2);
-    var start = -math.pi / 2;
-    for (var i = 0; i < values.length; i++) {
-      final sweep = values[i] / total * math.pi * 2;
-      final p = Paint()..color = _pieColors[i % _pieColors.length];
-      canvas.drawArc(Rect.fromCircle(center: center, radius: r), start, sweep, true, p);
-      start += sweep;
-    }
-    final hole = Paint()..color = Colors.white;
-    canvas.drawCircle(center, r * .52, hole);
-  }
-  @override bool shouldRepaint(covariant _PieChartPainter old) => old.values != values || old.selectedIndex != selectedIndex;
-}
-
-const _pieColors = <Color>[
-  Color(0xFF2F80ED), Color(0xFFF59E0B), Color(0xFF34B66A), Color(0xFFF97316),
-  Color(0xFF8B5CF6), Color(0xFF06B6D4), Color(0xFFEF4444), Color(0xFF64748B),
-];

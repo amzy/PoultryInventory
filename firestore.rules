@@ -9,7 +9,7 @@ service cloud.firestore {
     function appConfig() { return /databases/$(database)/documents/app/config; }
     function isAdmin() { return signedIn() && exists(userProfile(userId())) && get(userProfile(userId())).data.role == 'admin'; }
     function flockMember(flockId, uid) { return /databases/$(database)/documents/flocks/$(flockId)/members/$(uid); }
-    function isFlockMember(flockId) { return signedIn() && exists(flockMember(flockId, userId())); }
+    function isFlockMember(flockId) { return signedIn() && exists(flockMember(flockId, userId())) && get(flockMember(flockId, userId())).data.status == 'active'; }
     function isFlockAdmin(flockId) { return isFlockMember(flockId) && get(flockMember(flockId, userId())).data.role == 'admin'; }
 
     function dailyLogShape(data) {
@@ -50,10 +50,12 @@ service cloud.firestore {
       && data.transactionType is string && data.transactionType in ['expense','credit'] && data.createdAt is timestamp;
     }
     function expenseCategoryValid(data) {
-      // Main categories remain controlled by the financial model. Subcategories
-      // are global master data and therefore are intentionally not bound to a
-      // particular main category.
-      return data.mainCategory in ['Layer Bird','Chiks','Renovation','Augar Work']
+      // Main categories are global master data managed by administrators.
+      // Keep the legacy four-category fallback for existing deployments where
+      // the new global category catalog has not been created yet.
+      return ((exists(/databases/$(database)/documents/expense_categories/global)
+          && data.mainCategory in get(/databases/$(database)/documents/expense_categories/global).data.items)
+        || data.mainCategory in ['Layer Bird','Chiks','Renovation','Augar Work'])
         && data.category is string && data.category.size() > 0;
     }
     function expenseValues(data) {
@@ -63,6 +65,11 @@ service cloud.firestore {
     }
 
     match /feed_catalog/{docId} {
+      allow read: if signedIn() && docId == 'global';
+      allow create, update, delete: if isAdmin() && docId == 'global';
+    }
+
+    match /expense_categories/{docId} {
       allow read: if signedIn() && docId == 'global';
       allow create, update, delete: if isAdmin() && docId == 'global';
     }
@@ -145,8 +152,8 @@ service cloud.firestore {
 
     match /flocks/{flockId} {
       allow read: if isFlockMember(flockId) || isAdmin();
-      allow create: if isAdmin();
-      allow update: if isFlockAdmin(flockId) || isAdmin();
+      allow create: if isAdmin() && request.resource.data.accounts is list && request.resource.data.accounts.size() >= 1;
+      allow update: if (isFlockAdmin(flockId) || isAdmin()) && request.resource.data.accounts is list && request.resource.data.accounts.size() >= 1;
       allow delete: if false;
 
       match /migration/{migrationId} {
@@ -156,14 +163,22 @@ service cloud.firestore {
       match /members/{memberUid} {
         allow read: if isFlockMember(flockId) || isAdmin();
         allow create: if isFlockAdmin(flockId) || (isAdmin() && memberUid == userId()) || (signedIn() && memberUid == userId() && exists(/databases/$(database)/documents/flocks/$(flockId)/invitations/$(request.auth.token.email)));
-        allow update: if isFlockAdmin(flockId) || (isAdmin() && memberUid == userId()) || (signedIn() && memberUid == userId());
+        allow update: if isFlockAdmin(flockId) || (isAdmin() && memberUid == userId()) || (signedIn() && memberUid == userId() && request.resource.data.status == resource.data.status);
         allow delete: if isFlockAdmin(flockId) && memberUid != userId();
       }
 
       match /invitations/{inviteId} {
         allow read: if isFlockAdmin(flockId) || (signedIn() && resource.data.email == userEmail());
         allow create: if isFlockAdmin(flockId) && request.resource.data.email is string && request.resource.data.status == 'pending';
-        allow update: if (isFlockAdmin(flockId)) || (signedIn() && resource.data.email == userEmail() && request.resource.data.status == 'accepted');
+        allow update: if isFlockAdmin(flockId)
+          || (signedIn() && resource.data.email == userEmail() && (
+            (resource.data.status == 'pending' && request.resource.data.status == 'accepted')
+            || (resource.data.status == 'pending' && request.resource.data.status == 'declined'
+                && request.resource.data.declineCount is int
+                && request.resource.data.declineCount == (resource.data.declineCount is int ? resource.data.declineCount + 1 : 1)
+                && ((resource.data.declineCount is int && resource.data.declineCount >= 1 && request.resource.data.permanentlyReported == true)
+                    || request.resource.data.permanentlyReported == false))
+          ));
         allow delete: if isFlockAdmin(flockId);
       }
 

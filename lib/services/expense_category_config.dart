@@ -19,13 +19,24 @@ class ExpenseCategoryConfig {
         cleaned.isEmpty ? List<String>.from(accounts) : cleaned;
   }
 
-  /// Only these four main categories are part of the current financial model.
-  static const mainCategories = <String>[
+  /// Default main categories used when no administrator-managed catalog exists.
+  static const defaultMainCategories = <String>[
     'Layer Bird',
     'Chiks',
     'Renovation',
     'Augar Work',
   ];
+
+  static List<String> runtimeMainCategories = List<String>.from(defaultMainCategories);
+
+  static List<String> get activeMainCategories => List.unmodifiable(
+        runtimeMainCategories.isEmpty ? defaultMainCategories : runtimeMainCategories,
+      );
+
+  static void setMainCategories(List<String> values) {
+    final cleaned = values.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    runtimeMainCategories = cleaned.isEmpty ? List<String>.from(defaultMainCategories) : cleaned;
+  }
 
   /// Global subcategory catalog. Subcategories are independent of the main
   /// category and contain only canonical names used by the current app.
@@ -65,7 +76,7 @@ class ExpenseCategoryConfig {
   }
 
   static bool isValidMainCategory(String value) =>
-      mainCategories.contains(value.trim());
+      activeMainCategories.contains(value.trim());
 
   static bool isValidSubcategory(String mainCategory, String subcategory) =>
       activeSubcategories.contains(subcategory.trim());

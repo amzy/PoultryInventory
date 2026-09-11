@@ -27,14 +27,20 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _importing = false;
   String _importStatus = '';
-  final _startDateController = TextEditingController();
-  final _startingBirdsController = TextEditingController();
-  final _breedController = TextEditingController();
-  final List<TextEditingController> _accountControllers = [];
   final List<TextEditingController> _feedItemControllers = [];
+  final List<String> _expenseCategories = [];
+  final List<String> _expenseSubcategories = [];
+  final _notifTitleEn = TextEditingController(text: 'Daily Farm Update');
+  final _notifTitleHi = TextEditingController(text: 'दैनिक फार्म अपडेट');
+  final _notifBodyEn = TextEditingController(text: "Please complete today's report for {flockName}.");
+  final _notifBodyHi = TextEditingController(text: 'कृपया {flockName} की आज की रिपोर्ट दर्ज करें।');
+  bool _notificationsEnabled = true;
+  bool _dailyReminderEnabled = true;
+  bool _secondReminderEnabled = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 20, minute: 0);
+  TimeOfDay _secondReminderTime = const TimeOfDay(hour: 22, minute: 0);
   bool _configLoaded = false;
   int _selectedSetting = 0;
-  DateTime _startDate = FarmConfig.defaultFlockStartDate;
 
   @override
   void initState() {
@@ -55,42 +61,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _applyConfig(FarmConfig config) {
-    _startDate = config.flockStartDate;
-    _startDateController.text = DateFormat('dd MMM yyyy').format(_startDate);
-    _startingBirdsController.text = config.startingBirds.toString();
-    _breedController.text = config.breedName;
-    for (final c in _accountControllers) c.dispose();
     for (final c in _feedItemControllers) c.dispose();
-    _accountControllers.clear();
     _feedItemControllers.clear();
-    for (final account in config.accounts) _accountControllers.add(TextEditingController(text: account));
     final globalFeeds = context.read<PoultryProvider>().feedItems;
     for (final item in globalFeeds) _feedItemControllers.add(TextEditingController(text: item));
+    _expenseCategories
+      ..clear()
+      ..addAll(context.read<PoultryProvider>().expenseCategories);
+    _expenseSubcategories
+      ..clear()
+      ..addAll(context.read<PoultryProvider>().expenseSubcategories);
+    _loadNotificationConfig();
   }
 
-  void _addAccount() => setState(() => _accountControllers.add(TextEditingController()));
   void _addFeedItem() => setState(() => _feedItemControllers.add(TextEditingController()));
-
-  Future<void> _saveFlockConfig() async {
-    final birds = int.tryParse(_startingBirdsController.text.trim());
-    if (birds == null || birds < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid starting bird count.')));
-      return;
-    }
-    final accounts = _accountControllers.map((c) => c.text.trim()).where((e) => e.isNotEmpty).toSet().toList();
-    if (accounts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add at least one account.')));
-      return;
-    }
-    final config = FarmConfig(flockStartDate: _startDate, startingBirds: birds, breedName: _breedController.text.trim(), accounts: accounts, feedItems: context.read<PoultryProvider>().feedItems);
-    try {
-      await context.read<PoultryProvider>().saveFarmConfig(config);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Flock configuration saved.')));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to save flock configuration: $e')));
-    }
-  }
 
   Future<void> _saveFeedCatalog() async {
     if (_importing) return;
@@ -109,9 +93,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    _startDateController.dispose(); _startingBirdsController.dispose(); _breedController.dispose();
-    for (final c in _accountControllers) c.dispose();
     for (final c in _feedItemControllers) c.dispose();
+    _notifTitleEn.dispose(); _notifTitleHi.dispose(); _notifBodyEn.dispose(); _notifBodyHi.dispose();
     super.dispose();
   }
 
@@ -252,7 +235,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final panels = <Widget>[
       _flockConfigurationPanel(),
+      _accountsPanel(),
       _feedCatalogPanel(),
+      _categoriesPanel(),
+      _notificationsPanel(),
       _dataManagementPanel(),
       const AdminPanelScreen(embedded: true, adminOnly: true),
     ];
@@ -349,9 +335,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _settingsCategoryList({bool compact = false}) {
     const items = <_SettingsCategory>[
       _SettingsCategory('Flock Configuration', 'Farm and flock details', Icons.home_work_outlined, Color(0xFF0E9F6E)),
+      _SettingsCategory('Accounts', 'Saved expense accounts', Icons.account_balance_wallet_outlined, Color(0xFF0891B2)),
       _SettingsCategory('Feed Catalog', 'Shared feed items', Icons.grass_outlined, Color(0xFFF59E0B)),
+      _SettingsCategory('Categories', 'Manage categories and subcategories', Icons.category_outlined, Color(0xFFDB2777)),
+      _SettingsCategory('Notifications', 'Flock notification settings', Icons.notifications_active_outlined, Color(0xFFEA580C)),
       _SettingsCategory('Data Management', 'Backup, import and export', Icons.storage_outlined, Color(0xFF2563EB)),
-      _SettingsCategory('Administration', 'Members, suppliers and notifications', Icons.admin_panel_settings_outlined, Color(0xFF7C3AED)),
+      _SettingsCategory('Administration', 'Members and suppliers', Icons.admin_panel_settings_outlined, Color(0xFF7C3AED)),
     ];
 
     final list = Column(
@@ -452,6 +441,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final birdsController = TextEditingController();
     final breedController = TextEditingController();
     DateTime startDate = DateTime.now();
+    var selectedAccounts = <String>[];
+    final savedAccounts = List<String>.from(provider.savedAccounts);
+    if (savedAccounts.isNotEmpty) selectedAccounts = [savedAccounts.first];
 
     try {
       final created = await showDialog<bool>(
@@ -518,11 +510,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           }
                         },
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('Accounts', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
+                      ),
+                      const SizedBox(height: 6),
+                      if (savedAccounts.isEmpty)
+                        const Align(alignment: Alignment.centerLeft, child: Text('Add an account in Settings → Accounts before creating a flock.', style: TextStyle(fontSize: 10.5, color: Color(0xFFB45309))))
+                      else
+                        ...savedAccounts.map((account) => CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(account, style: const TextStyle(fontSize: 12)),
+                          value: selectedAccounts.contains(account),
+                          onChanged: (checked) {
+                            setDialogState(() {
+                              if (checked == true) {
+                                selectedAccounts = [...selectedAccounts, account];
+                              } else if (selectedAccounts.length > 1) {
+                                selectedAccounts = selectedAccounts.where((e) => e != account).toList();
+                              }
+                            });
+                          },
+                          controlAffinity: ListTileControlAffinity.leading,
+                        )),
+                      const SizedBox(height: 4),
                       const Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'New flocks start in Running state. You can end a flock later without deleting its records.',
+                          'New flocks start in Running state. Select at least one saved account. You can end a flock later without deleting its records.',
                           style: TextStyle(fontSize: 11, color: Color(0xFF60736A)),
                         ),
                       ),
@@ -551,6 +568,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                       return;
                     }
+                    if (selectedAccounts.isEmpty) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(content: Text('Select at least one account.')),
+                      );
+                      return;
+                    }
 
                     try {
                       await provider.createFlock(
@@ -558,7 +581,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         startDate: startDate,
                         startingBirds: birds,
                         breedName: breedController.text.trim(),
-                        accounts: List<String>.from(FarmConfig.defaultAccounts),
+                        accounts: List<String>.from(selectedAccounts),
                         feedItems: provider.feedItems,
                       );
                       if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
@@ -604,14 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _importing = true);
     try {
-      await context.read<PoultryProvider>().updateActiveFlock(
-        name: flock.name,
-        startDate: flock.startDate,
-        startingBirds: flock.startingBirds,
-        breedName: flock.breedName,
-        accounts: flock.accounts,
-        endDate: endDate,
-      );
+      await context.read<PoultryProvider>().endFlock(flock.id, endDate);
       if (!mounted) return;
       _applyConfig(context.read<PoultryProvider>().farmConfig);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -628,156 +644,203 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _showFlockAccountsDialog(Flock flock) async {
+    final provider = context.read<PoultryProvider>();
+    final savedAccounts = List<String>.from(provider.savedAccounts);
+    final available = <String>{...savedAccounts, ...flock.accounts}.toList();
+    var selected = flock.accounts.where(available.contains).toSet();
+    if (selected.isEmpty && available.isNotEmpty) selected = {available.first};
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Accounts • ${flock.name}'),
+          content: SizedBox(
+            width: 420,
+            child: available.isEmpty
+                ? const Text('No saved accounts. Add an account in Settings → Accounts first.')
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Select one or more saved accounts for this flock.', style: TextStyle(fontSize: 11, color: Color(0xFF60736A))),
+                      const SizedBox(height: 8),
+                      ...available.map((account) => CheckboxListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(account, style: const TextStyle(fontSize: 12)),
+                            value: selected.contains(account),
+                            onChanged: (checked) {
+                              setDialogState(() {
+                                if (checked == true) {
+                                  selected.add(account);
+                                } else if (selected.length > 1) {
+                                  selected.remove(account);
+                                }
+                              });
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
+                          )),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () async {
+                      try {
+                        await provider.updateFlockAccounts(flock.id, selected.toList());
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Flock accounts updated.')));
+                      } catch (e) {
+                        if (dialogContext.mounted) ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('Unable to update accounts: $e')));
+                      }
+                    },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _flockListSection() {
     return Consumer<PoultryProvider>(
       builder: (context, provider, _) {
-        final flocks = provider.flocks;
-        final runningCount = flocks.where((f) => f.isActive).length;
+        final runningFlocks = provider.flocks.where((f) => f.isActive).toList();
+        final runningCount = runningFlocks.length;
         final currentId = provider.activeFlockId;
         return Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF7FBF8),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFDCE9E1)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Your Flocks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
-                        SizedBox(height: 3),
-                        Text('The current flock is app-specific. Switching here changes the flock used by this app on this device/browser only.', style: TextStyle(fontSize: 10, height: 1.35, color: Color(0xFF60736A))),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  OutlinedButton.icon(
-                    onPressed: runningCount >= 3 || _importing ? null : _showAddFlockDialog,
-                    icon: const Icon(Icons.add, size: 17),
-                    label: Text(runningCount >= 3 ? '3 / 3 running' : 'Add Flock'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (flocks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text('No flocks available.', style: TextStyle(fontSize: 11, color: Color(0xFF718179))),
-                )
-              else
-                ...flocks.map((flock) {
-                  final isCurrent = flock.id == currentId;
-                  final running = flock.isActive;
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: isCurrent ? const Color(0xFFEAF7F0) : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isCurrent ? const Color(0xFFB8DEC8) : const Color(0xFFE1E9E4)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: running ? const Color(0xFFE5F7ED) : const Color(0xFFF0F1F1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(running ? Icons.play_circle_outline : Icons.check_circle_outline, color: running ? const Color(0xFF0E9F6E) : const Color(0xFF7B8580), size: 20),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(child: Text(flock.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1A2D24)))),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: running ? const Color(0xFFDDF4E7) : const Color(0xFFEDEFEF),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(running ? 'Running' : 'Ended', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: running ? const Color(0xFF087A4F) : const Color(0xFF68736E))),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '${flock.breedName.isEmpty ? 'Breed not set' : flock.breedName}  •  ${flock.startingBirds} birds  •  Started ${DateFormat('dd MMM yyyy').format(flock.startDate)}${flock.endDate == null ? '' : '  •  Ended ${DateFormat('dd MMM yyyy').format(flock.endDate!)}'}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 9.5, color: Color(0xFF718179)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('Current', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF60736A))),
-                            Switch.adaptive(
-                              value: isCurrent,
-                              onChanged: isCurrent || _importing ? null : (_) => _selectFlockFromSettings(flock),
-                              activeTrackColor: const Color(0xFF0E9F6E),
-                            ),
-                          ],
-                        ),
-                        if (running) ...[
-                          const SizedBox(width: 2),
-                          IconButton(
-                            tooltip: 'End flock',
-                            onPressed: _importing ? null : () => _endFlock(flock),
-                            icon: const Icon(Icons.stop_circle_outlined, color: Color(0xFFB45309), size: 21),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }),
-            ],
-          ),
+          decoration: BoxDecoration(color: const Color(0xFFF7FBF8), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFDCE9E1))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Running Flocks', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
+                SizedBox(height: 3),
+                Text('Select the flock currently used by this app. Ended flocks remain in history but are not shown here.', style: TextStyle(fontSize: 10, height: 1.35, color: Color(0xFF60736A))),
+              ])),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(onPressed: runningCount >= 3 || _importing ? null : _showAddFlockDialog, icon: const Icon(Icons.add, size: 17), label: Text(runningCount >= 3 ? '3 / 3 running' : 'Add Flock')),
+            ]),
+            const SizedBox(height: 10),
+            if (runningFlocks.isEmpty)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No running flocks available.', style: TextStyle(fontSize: 11, color: Color(0xFF718179))))
+            else
+              ...runningFlocks.map((flock) {
+                final isCurrent = flock.id == currentId;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(color: isCurrent ? const Color(0xFFEAF7F0) : Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: isCurrent ? const Color(0xFFB8DEC8) : const Color(0xFFE1E9E4))),
+                  child: Row(children: [
+                    Container(width: 36, height: 36, decoration: BoxDecoration(color: const Color(0xFFE5F7ED), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.play_circle_outline, color: Color(0xFF0E9F6E), size: 20)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [Flexible(child: Text(flock.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1A2D24)))), const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3), decoration: BoxDecoration(color: const Color(0xFFDDF4E7), borderRadius: BorderRadius.circular(20)), child: const Text('Running', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF087A4F))))]),
+                      const SizedBox(height: 3),
+                      Text('${flock.breedName.isEmpty ? 'Breed not set' : flock.breedName}  •  ${flock.startingBirds} birds  •  ${flock.accounts.isEmpty ? 'No accounts' : flock.accounts.join(', ')}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, color: Color(0xFF718179))),
+                    ])),
+                    const SizedBox(width: 6),
+                    if (provider.isAdmin) IconButton(tooltip: 'Select accounts', onPressed: _importing ? null : () => _showFlockAccountsDialog(flock), icon: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF0891B2), size: 20)),
+                    Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Text('Current', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF60736A))),
+                      Switch.adaptive(value: isCurrent, onChanged: isCurrent || _importing ? null : (_) => _selectFlockFromSettings(flock), activeTrackColor: const Color(0xFF0E9F6E)),
+                    ]),
+                    const SizedBox(width: 2),
+                    if (provider.isAdmin) IconButton(tooltip: 'End flock', onPressed: _importing ? null : () => _endFlock(flock), icon: const Icon(Icons.stop_circle_outlined, color: Color(0xFFB45309), size: 21)),
+                  ]),
+                );
+              }),
+          ]),
         );
       },
     );
   }
 
   Widget _flockConfigurationPanel() => AppCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _panelTitle('Flock Configuration', 'Manage up to 3 running flocks; ended flocks are kept for history', Icons.home_work_outlined),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _panelTitle('Flock Configuration', 'Manage running flocks and their saved expense accounts', Icons.home_work_outlined),
+          const SizedBox(height: 14),
+          _flockListSection(),
+        ]),
+      );
+
+  Future<void> _showSavedAccountDialog({String? existing}) async {
+    final controller = TextEditingController(text: existing ?? '');
+    final provider = context.read<PoultryProvider>();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(existing == null ? 'Add Account' : 'Update Account'),
+        content: TextField(controller: controller, autofocus: true, maxLength: 80, decoration: const InputDecoration(labelText: 'Account Name', hintText: 'e.g. Farm Cash', prefixIcon: Icon(Icons.account_balance_wallet_outlined), border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(onPressed: () { final value = controller.text.trim(); if (value.isEmpty) { ScaffoldMessenger.of(dialogContext).showSnackBar(const SnackBar(content: Text('Enter an account name.'))); return; } Navigator.pop(dialogContext, value); }, child: Text(existing == null ? 'Add' : 'Update')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    final accounts = List<String>.from(provider.savedAccounts);
+    if (existing != null) {
+      final index = accounts.indexOf(existing);
+      if (index >= 0) accounts[index] = result;
+    } else {
+      if (accounts.any((e) => e.toLowerCase() == result.toLowerCase())) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That account already exists.'))); return; }
+      accounts.add(result);
+    }
+    try {
+      await provider.saveSavedAccounts(accounts);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(existing == null ? 'Account added.' : 'Account updated.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to save account: $e')));
+    }
+  }
+
+  Future<void> _deleteSavedAccount(String account) async {
+    final provider = context.read<PoultryProvider>();
+    final confirmed = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(title: const Text('Delete account?'), content: Text('Remove "$account" from your saved account list? Existing flock records and historical transactions will not be deleted.'), actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Delete'))])) ?? false;
+    if (!confirmed || !mounted) return;
+    final accounts = provider.savedAccounts.where((e) => e != account).toList();
+    if (accounts.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('At least one saved account must remain.'))); return; }
+    try {
+      await provider.saveSavedAccounts(accounts);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account deleted from the saved list.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to delete account: $e')));
+    }
+  }
+
+  Widget _accountsPanel() => Consumer<PoultryProvider>(
+        builder: (context, provider, _) => AppCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(child: _panelTitle('Accounts', 'Saved accounts available to assign to one or more flocks', Icons.account_balance_wallet_outlined)),
+              OutlinedButton.icon(onPressed: _importing ? null : () => _showSavedAccountDialog(), icon: const Icon(Icons.add, size: 17), label: const Text('Add Account')),
+            ]),
             const SizedBox(height: 14),
-            _flockListSection(),
-            const SizedBox(height: 18),
-            LayoutBuilder(builder: (context, c) {
-              final wide = c.maxWidth >= 700;
-              final fields = <Widget>[
-                TextField(controller: _startDateController, readOnly: true, decoration: const InputDecoration(labelText: 'Flock Start Date', prefixIcon: Icon(Icons.calendar_today_outlined), border: OutlineInputBorder()), onTap: () async { final picked = await showDatePicker(context: context, initialDate: _startDate, firstDate: DateTime(2000), lastDate: DateTime.now()); if (picked != null) setState(() { _startDate = picked; _startDateController.text = DateFormat('dd MMM yyyy').format(picked); }); }),
-                TextField(controller: _startingBirdsController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Starting Bird Count', prefixIcon: Icon(Icons.pets_outlined), border: OutlineInputBorder())),
-                TextField(controller: _breedController, decoration: const InputDecoration(labelText: 'Breed Name', prefixIcon: Icon(Icons.category_outlined), border: OutlineInputBorder())),
-              ];
-              return Wrap(spacing: 10, runSpacing: 10, children: fields.map((w) => SizedBox(width: wide ? (c.maxWidth - 20) / 3 : c.maxWidth, child: w)).toList());
-            }),
-            const SizedBox(height: 16),
-            const Text('Accounts', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF243A30))),
-            const SizedBox(height: 8),
-            ..._accountControllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: TextField(controller: entry.value, decoration: InputDecoration(labelText: 'Account ${entry.key + 1}', border: const OutlineInputBorder()))), const SizedBox(width: 8), IconButton(onPressed: () => setState(() { final c = _accountControllers.removeAt(entry.key); c.dispose(); }), icon: const Icon(Icons.remove_circle_outline, color: Colors.red))]))),
-            OutlinedButton.icon(onPressed: _addAccount, icon: const Icon(Icons.add), label: const Text('Add Account')),
-            const SizedBox(height: 14),
-            SizedBox(width: double.infinity, height: 44, child: FilledButton.icon(onPressed: _importing ? null : _saveFlockConfig, icon: const Icon(Icons.save_outlined), label: const Text('Save Flock Configuration'))),
-          ],
+            if (provider.savedAccounts.isEmpty)
+              const Text('No saved accounts.', style: TextStyle(fontSize: 11, color: Color(0xFF718179)))
+            else
+              ...provider.savedAccounts.map((account) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE1E9E4))),
+                    child: Row(children: [
+                      const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF0891B2), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(account, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF243A30)))),
+                      IconButton(tooltip: 'Edit account', onPressed: _importing ? null : () => _showSavedAccountDialog(existing: account), icon: const Icon(Icons.edit_outlined, size: 19)),
+                      IconButton(tooltip: 'Delete account', onPressed: _importing ? null : () => _deleteSavedAccount(account), icon: const Icon(Icons.delete_outline, color: Colors.red, size: 19)),
+                    ]),
+                  )),
+            const SizedBox(height: 6),
+            const Text('Deleting a saved account only removes it from the reusable account catalog. Existing flock assignments and historical transactions are preserved.', style: TextStyle(fontSize: 10.5, height: 1.4, color: Color(0xFF60736A))),
+          ]),
         ),
       );
 
@@ -794,6 +857,118 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       );
+
+  Future<void> _loadNotificationConfig() async {
+    final p = context.read<PoultryProvider>();
+    if (p.activeFlockId.isEmpty) return;
+    try {
+      final settings = await p.fetchNotificationSettings();
+      final template = await p.fetchNotificationTemplate('daily_report_reminder');
+      if (!mounted) return;
+      setState(() {
+        _notificationsEnabled = settings?['enabled'] != false;
+        _dailyReminderEnabled = settings?['dailyReportReminder'] != false;
+        _secondReminderEnabled = settings?['secondReminderEnabled'] == true;
+        _reminderTime = TimeOfDay(hour: (settings?['reminderHour'] as num?)?.toInt() ?? 20, minute: (settings?['reminderMinute'] as num?)?.toInt() ?? 0);
+        _secondReminderTime = TimeOfDay(hour: (settings?['secondReminderHour'] as num?)?.toInt() ?? 22, minute: (settings?['secondReminderMinute'] as num?)?.toInt() ?? 0);
+        _notifTitleEn.text = template?['titleEn']?.toString() ?? _notifTitleEn.text;
+        _notifTitleHi.text = template?['titleHi']?.toString() ?? _notifTitleHi.text;
+        _notifBodyEn.text = template?['bodyEn']?.toString() ?? _notifBodyEn.text;
+        _notifBodyHi.text = template?['bodyHi']?.toString() ?? _notifBodyHi.text;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveNotifications() async {
+    final p = context.read<PoultryProvider>();
+    try {
+      await p.saveNotificationSettings({'enabled': _notificationsEnabled, 'dailyReportReminder': _dailyReminderEnabled, 'secondReminderEnabled': _secondReminderEnabled, 'reminderHour': _reminderTime.hour, 'reminderMinute': _reminderTime.minute, 'secondReminderHour': _secondReminderTime.hour, 'secondReminderMinute': _secondReminderTime.minute, 'timezone': 'Asia/Kolkata'});
+      await p.saveNotificationTemplate('daily_report_reminder', {'titleEn': _notifTitleEn.text.trim(), 'titleHi': _notifTitleHi.text.trim(), 'bodyEn': _notifBodyEn.text.trim(), 'bodyHi': _notifBodyHi.text.trim(), 'enabled': _dailyReminderEnabled, 'reminderHour': _reminderTime.hour, 'reminderMinute': _reminderTime.minute, 'secondReminderHour': _secondReminderTime.hour, 'secondReminderMinute': _secondReminderTime.minute, 'secondReminderEnabled': _secondReminderEnabled});
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notification settings saved.')));
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to save notifications: $e'))); }
+  }
+
+  Future<void> _pickNotificationTime(bool first) async {
+    final t = await showTimePicker(context: context, initialTime: first ? _reminderTime : _secondReminderTime);
+    if (t != null && mounted) setState(() { if (first) { _reminderTime = t; } else { _secondReminderTime = t; } });
+  }
+
+  Future<void> _sendNotificationAnnouncement() async {
+    try {
+      await context.read<PoultryProvider>().sendFlockNotification(titleEn: _notifTitleEn.text.trim(), titleHi: _notifTitleHi.text.trim(), bodyEn: _notifBodyEn.text.trim(), bodyHi: _notifBodyHi.text.trim());
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notification queued for flock members.')));
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to send notification: $e'))); }
+  }
+
+  Widget _notificationsPanel() => AppCard(
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _panelTitle('Notifications', 'Configure reminders and flock announcements', Icons.notifications_active_outlined),
+      const SizedBox(height: 12),
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Enable flock notifications'), value: _notificationsEnabled, onChanged: (v) => setState(() => _notificationsEnabled = v)),
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Daily report reminder'), value: _dailyReminderEnabled, onChanged: (v) => setState(() => _dailyReminderEnabled = v)),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        _notificationTimeTile('Reminder time', _reminderTime, () => _pickNotificationTime(true)),
+        _notificationTimeTile('Second reminder', _secondReminderTime, () => _pickNotificationTime(false)),
+      ]),
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Enable second reminder'), value: _secondReminderEnabled, onChanged: (v) => setState(() => _secondReminderEnabled = v)),
+      const Divider(height: 28),
+      const Text('Daily Report Reminder — configurable localization', style: TextStyle(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8),
+      TextField(controller: _notifTitleEn, decoration: const InputDecoration(labelText: 'Title — English', border: OutlineInputBorder())), const SizedBox(height: 8),
+      TextField(controller: _notifTitleHi, decoration: const InputDecoration(labelText: 'Title — Hindi', border: OutlineInputBorder())), const SizedBox(height: 8),
+      TextField(controller: _notifBodyEn, maxLines: 2, decoration: const InputDecoration(labelText: 'Message — English', helperText: 'Variables: {memberName}, {flockName}, {breedName}, {date}', border: OutlineInputBorder())), const SizedBox(height: 8),
+      TextField(controller: _notifBodyHi, maxLines: 2, decoration: const InputDecoration(labelText: 'Message — Hindi', helperText: 'Variables: {memberName}, {flockName}, {breedName}, {date}', border: OutlineInputBorder())), const SizedBox(height: 10),
+      Row(children: [Expanded(child: FilledButton.icon(onPressed: _saveNotifications, icon: const Icon(Icons.save_outlined), label: const Text('Save Notification Settings'))), const SizedBox(width: 8), OutlinedButton.icon(onPressed: _sendNotificationAnnouncement, icon: const Icon(Icons.send_outlined), label: const Text('Send Test / Announcement'))]),
+    ]),
+  );
+
+  Widget _notificationTimeTile(String label, TimeOfDay time, VoidCallback onTap) => SizedBox(width: 220, child: ListTile(shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFFDCE7E0)), borderRadius: BorderRadius.circular(8)), title: Text(label), subtitle: Text(time.format(context)), trailing: const Icon(Icons.schedule), onTap: onTap));
+
+  Future<void> _editCategory({required bool subcategory, String? existing}) async {
+    final controller = TextEditingController(text: existing ?? '');
+    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(title: Text(existing == null ? 'Add ${subcategory ? 'Subcategory' : 'Category'}' : 'Edit ${subcategory ? 'Subcategory' : 'Category'}'), content: TextField(controller: controller, autofocus: true, maxLength: 120, decoration: InputDecoration(labelText: subcategory ? 'Subcategory Name' : 'Category Name', border: const OutlineInputBorder())), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')), FilledButton(onPressed: () { final v = controller.text.trim(); if (v.isNotEmpty) Navigator.pop(ctx, v); }, child: Text(existing == null ? 'Add' : 'Update'))]));
+    controller.dispose();
+    if (value == null || !mounted) return;
+    final target = subcategory ? _expenseSubcategories : _expenseCategories;
+    final duplicate = target.any((e) => e.toLowerCase() == value.toLowerCase() && e != existing);
+    if (duplicate) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That name already exists.'))); return; }
+    final updated = List<String>.from(target);
+    if (existing == null) { updated.add(value); } else { final i = updated.indexOf(existing); if (i >= 0) updated[i] = value; }
+    try {
+      if (subcategory) { await context.read<PoultryProvider>().saveExpenseSubcategories(updated); } else { await context.read<PoultryProvider>().saveExpenseCategories(updated); }
+      setState(() { target..clear()..addAll(updated); });
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to save: $e'))); }
+  }
+
+  Future<void> _deleteCategory({required bool subcategory, required String value}) async {
+    final target = subcategory ? _expenseSubcategories : _expenseCategories;
+    if (target.length <= 1) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('At least one item must remain.'))); return; }
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: Text('Delete ${subcategory ? 'subcategory' : 'category'}?'), content: Text('Remove "$value" from the saved catalog? Existing transaction history is not deleted.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete'))])) ?? false;
+    if (!ok || !mounted) return;
+    final updated = target.where((e) => e != value).toList();
+    try {
+      if (subcategory) { await context.read<PoultryProvider>().saveExpenseSubcategories(updated); } else { await context.read<PoultryProvider>().saveExpenseCategories(updated); }
+      setState(() { target..clear()..addAll(updated); });
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to delete: $e'))); }
+  }
+
+  Widget _categoryManagementList({required bool subcategory}) {
+    final items = subcategory ? _expenseSubcategories : _expenseCategories;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Expanded(child: Text(subcategory ? 'Subcategories' : 'Categories', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800))), OutlinedButton.icon(onPressed: () => _editCategory(subcategory: subcategory), icon: const Icon(Icons.add, size: 18), label: Text('Add ${subcategory ? 'Subcategory' : 'Category'}'))]),
+      const SizedBox(height: 8),
+      if (items.isEmpty) const Text('No items configured.'),
+      ...items.map((item) => Container(margin: const EdgeInsets.only(bottom: 7), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE2EAE5)), borderRadius: BorderRadius.circular(10)), child: Row(children: [Expanded(child: Text(item, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))), IconButton(tooltip: 'Edit', onPressed: () => _editCategory(subcategory: subcategory, existing: item), icon: const Icon(Icons.edit_outlined, size: 18)), IconButton(tooltip: 'Delete', onPressed: () => _deleteCategory(subcategory: subcategory, value: item), icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red))]))),
+    ]);
+  }
+
+  Widget _categoriesPanel() => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    _panelTitle('Categories', 'Manage expense categories and subcategories', Icons.category_outlined),
+    const SizedBox(height: 14),
+    _categoryManagementList(subcategory: false),
+    const Divider(height: 32),
+    _categoryManagementList(subcategory: true),
+  ]));
 
   Widget _dataManagementPanel() => AppCard(
         child: Column(
