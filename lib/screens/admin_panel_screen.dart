@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:typed_data';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -9,15 +6,21 @@ import '../models/supplier.dart';
 import '../providers/poultry_provider.dart';
 import '../services/farm_config.dart';
 import '../services/expense_category_config.dart';
-import '../services/app_sql_export.dart';
-import '../services/sql_file_saver.dart';
-import '../services/cashew_sqlite_importer.dart';
+import '../services/firebase_service.dart';
 import '../widgets/app_shell.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   final bool embedded;
   final bool adminOnly;
-  const AdminPanelScreen({super.key, this.embedded = false, this.adminOnly = false});
+  final bool showSuppliers;
+  final bool showMembers;
+  const AdminPanelScreen({
+    super.key,
+    this.embedded = false,
+    this.adminOnly = false,
+    this.showSuppliers = true,
+    this.showMembers = true,
+  });
   @override State<AdminPanelScreen> createState() => _AdminPanelScreenState();
 }
 
@@ -28,7 +31,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   final _email = TextEditingController();
   final List<TextEditingController> _accounts = [];
   final List<TextEditingController> _feeds = [];
-  final List<TextEditingController> _subcategories = [];
   final _supplierName = TextEditingController();
   final _supplierAddress = TextEditingController();
   final _supplierContact = TextEditingController();
@@ -37,17 +39,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   DateTime _start = DateTime.now();
   DateTime? _end;
   bool _busy = false;
-  String _dataStatus = '';
-  final _notifTitleEn = TextEditingController(text: 'Daily Farm Update');
-  final _notifTitleHi = TextEditingController(text: 'दैनिक फार्म अपडेट');
-  final _notifBodyEn = TextEditingController(text: "Please complete today's report for {flockName}.");
-  final _notifBodyHi = TextEditingController(text: 'कृपया {flockName} की आज की रिपोर्ट दर्ज करें।');
-  bool _notificationsEnabled = true;
-  bool _dailyReminderEnabled = true;
-  bool _secondReminderEnabled = false;
   String? _memberFlockId;
-  TimeOfDay _reminderTime = const TimeOfDay(hour: 20, minute: 0);
-  TimeOfDay _secondReminderTime = const TimeOfDay(hour: 22, minute: 0);
 
   @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
   Future<void> _load() async {
@@ -57,13 +49,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _memberFlockId ??= runningFlocks.isNotEmpty ? runningFlocks.first.id : null;
     if (f == null) return;
     _name.text = f.name; _birds.text = f.startingBirds.toString(); _breed.text = f.breedName; _start = f.startDate; _end = f.endDate;
-    for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); for (final c in _subcategories) c.dispose(); _accounts.clear(); _feeds.clear(); _subcategories.clear();
+    for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); _accounts.clear(); _feeds.clear();
     for (final x in f.accounts) _accounts.add(TextEditingController(text: x));
     final globalFeeds = p.feedItems;
     for (final x in globalFeeds) _feeds.add(TextEditingController(text: x));
     if (_accounts.isEmpty) for (final x in FarmConfig.defaultAccounts) _accounts.add(TextEditingController(text: x));
     if (_feeds.isEmpty) for (final x in FarmConfig.defaultFeedItems) _feeds.add(TextEditingController(text: x));
-    for (final x in p.expenseSubcategories) _subcategories.add(TextEditingController(text: x));
     try {
       // Reconcile invitations/memberships for every running flock. A member
       // may already have a user-side flock_memberships record even when the
@@ -72,27 +63,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       for (final runningFlock in runningFlocks) {
         try { await p.syncInvitedMembers(runningFlock.id); } catch (_) {}
       }
-      final settings = await context.read<PoultryProvider>().fetchNotificationSettings();
-      if (settings != null && mounted) {
-        setState(() {
-          _notificationsEnabled = settings['enabled'] != false;
-          _dailyReminderEnabled = settings['dailyReportReminder'] != false;
-          _secondReminderEnabled = settings['secondReminderEnabled'] == true;
-          _reminderTime = TimeOfDay(hour: (settings['reminderHour'] as num?)?.toInt() ?? 20, minute: (settings['reminderMinute'] as num?)?.toInt() ?? 0);
-          _secondReminderTime = TimeOfDay(hour: (settings['secondReminderHour'] as num?)?.toInt() ?? 22, minute: (settings['secondReminderMinute'] as num?)?.toInt() ?? 0);
-        });
-      }
-      final template = await context.read<PoultryProvider>().fetchNotificationTemplate('daily_report_reminder');
-      if (template != null && mounted) {
-        _notifTitleEn.text = template['titleEn']?.toString() ?? _notifTitleEn.text;
-        _notifTitleHi.text = template['titleHi']?.toString() ?? _notifTitleHi.text;
-        _notifBodyEn.text = template['bodyEn']?.toString() ?? _notifBodyEn.text;
-        _notifBodyHi.text = template['bodyHi']?.toString() ?? _notifBodyHi.text;
-      }
     } catch (_) {}
     setState(() {});
   }
-  @override void dispose() { _name.dispose(); _birds.dispose(); _breed.dispose(); _email.dispose(); _supplierName.dispose(); _supplierAddress.dispose(); _supplierContact.dispose(); _notifTitleEn.dispose(); _notifTitleHi.dispose(); _notifBodyEn.dispose(); _notifBodyHi.dispose(); for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); for (final c in _subcategories) c.dispose(); super.dispose(); }
+  @override void dispose() { _name.dispose(); _birds.dispose(); _breed.dispose(); _email.dispose(); _supplierName.dispose(); _supplierAddress.dispose(); _supplierContact.dispose(); for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); super.dispose(); }
 
   Future<void> _save() async {
     final p = context.read<PoultryProvider>();
@@ -139,43 +113,15 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _snack('Invitation saved for the selected flock.');
     } catch (e) { _snack('Unable to add user: $e'); }
   }
-  Future<void> _exportData() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      final sql = AppSqlExport.buildExpenseSql(
-        context.read<PoultryProvider>().expenseRecords,
-        flockId: context.read<PoultryProvider>().activeFlock?.id,
-        flockName: context.read<PoultryProvider>().activeFlock?.name,
-        breedName: context.read<PoultryProvider>().activeFlock?.breedName,
-      );
-      final path = await saveSqlFile(Uint8List.fromList(utf8.encode(sql)), 'poultry_inventory_${context.read<PoultryProvider>().activeFlock?.name.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_') ?? 'flock'}.sql');
-      _snack(path == null ? 'Export cancelled.' : 'Flock data exported.');
-    } catch (e) { _snack('Export failed: $e'); } finally { if (mounted) setState(() => _busy = false); }
-  }
-
-  Future<void> _importData() async {
-    if (_busy) return;
-    final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['sql','db','sqlite','sqlite3'], withData: true);
-    final bytes = picked?.files.single.bytes;
-    if (bytes == null || bytes.isEmpty) return;
-    setState(() { _busy = true; _dataStatus = 'Reading import file…'; });
-    try {
-      final records = await parseCashewSqliteBytes(bytes);
-      final result = await context.read<PoultryProvider>().importCashewRecords(records, onProgress: (m) { if (mounted) setState(() => _dataStatus = m); });
-      _snack('${result.imported} imported, ${result.updated} updated, ${result.unchanged} unchanged.');
-    } catch (e) { _snack('Import failed: $e'); } finally { if (mounted) setState(() { _busy = false; _dataStatus = ''; }); }
-  }
-
   void _snack(String text) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text))); }
 
   @override Widget build(BuildContext context) {
     return Consumer<PoultryProvider>(builder: (context, p, _) {
       if (!p.isAdmin) return const Center(child: Text('Admin access required.'));
       final adminSections = <Widget>[
-        _suppliersSection(p),
-        const SizedBox(height: 12),
-        _membersSection(p),
+        if (widget.showSuppliers) _suppliersSection(p),
+        if (widget.showSuppliers && widget.showMembers) const SizedBox(height: 12),
+        if (widget.showMembers) _membersSection(p),
       ];
       final fullSections = <Widget>[
         _flockSelector(p), const SizedBox(height: 12),
@@ -224,25 +170,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   );
   Widget _fields() => LayoutBuilder(builder: (context, c) { final children = [TextField(controller: _name, decoration: const InputDecoration(labelText: 'Flock Name', border: OutlineInputBorder())), TextField(controller: _breed, decoration: const InputDecoration(labelText: 'Breed Name', border: OutlineInputBorder())), TextField(controller: _birds, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Starting Birds', border: OutlineInputBorder())), ListTile(shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFFDCE7E0)), borderRadius: BorderRadius.circular(4)), title: Text('Start: ${DateFormat('dd MMM yyyy').format(_start)}'), trailing: const Icon(Icons.calendar_today), onTap: () async { final d = await showDatePicker(context: context, initialDate: _start, firstDate: DateTime(2000), lastDate: DateTime.now()); if (d != null) setState(() => _start = d); }), ListTile(shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFFDCE7E0)), borderRadius: BorderRadius.circular(4)), title: Text(_end == null ? 'End: Active flock' : 'End: ${DateFormat('dd MMM yyyy').format(_end!)}'), trailing: Icon(_end == null ? Icons.lock_open_outlined : Icons.event_busy_outlined), onTap: () async { final d = await showDatePicker(context: context, initialDate: _end ?? DateTime.now(), firstDate: _start, lastDate: DateTime.now()); if (d != null) setState(() => _end = d); })]; return Wrap(spacing: 10, runSpacing: 10, children: children.map((w) => SizedBox(width: c.maxWidth >= 900 ? (c.maxWidth - 20) / 3 : c.maxWidth, child: w)).toList()); });
   Widget _listEditor(String title, List<TextEditingController> list, String hint, IconData icon) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 6), ...list.asMap().entries.map((e) => Padding(padding: const EdgeInsets.only(bottom: 7), child: Row(children: [Expanded(child: TextField(controller: e.value, decoration: InputDecoration(prefixIcon: Icon(icon), labelText: '$hint ${e.key + 1}', border: const OutlineInputBorder()))), IconButton(onPressed: () => setState(() { final c = list.removeAt(e.key); c.dispose(); }), icon: const Icon(Icons.remove_circle_outline, color: Colors.red))]))), OutlinedButton.icon(onPressed: () => setState(() => list.add(TextEditingController())), icon: const Icon(Icons.add), label: Text('Add $hint'))]);
-  Widget _subcategoriesSection(PoultryProvider p) => _section(
-    'Expense Subcategories',
-    Icons.category_outlined,
-    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Subcategories are global and independent from main categories and suppliers.', style: TextStyle(fontSize: 11, color: Color(0xFF75867D))),
-      const SizedBox(height: 10),
-      _listEditor('Subcategory List', _subcategories, 'Subcategory', Icons.category_outlined),
-      const SizedBox(height: 10),
-      Align(alignment: Alignment.centerRight, child: FilledButton.icon(
-        onPressed: _busy ? null : () async {
-          final items = _subcategories.map((c) => c.text.trim()).where((x) => x.isNotEmpty).toSet().toList();
-          try { await p.saveExpenseSubcategories(items); _snack('Expense subcategories saved.'); }
-          catch (e) { _snack('Unable to save subcategories: $e'); }
-        },
-        icon: const Icon(Icons.save_outlined), label: const Text('Save Subcategories'),
-      )),
-    ]),
-  );
-
   Widget _suppliersSection(PoultryProvider p) => _section(
     'Suppliers',
     Icons.local_shipping_outlined,
@@ -348,7 +275,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       });
     }
 
-    return _section('Flock Members', Icons.group_outlined, Column(
+    return _section('Flock Members & Invitations', Icons.group_outlined, Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (runningFlocks.isEmpty)
@@ -459,6 +386,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               label: Text(m.status == 'suspended' ? 'Resume' : 'Suspend'),
                             ),
                           if (m.uid.isNotEmpty && (m.status == 'active' || m.status == 'suspended')) OutlinedButton.icon(onPressed: () => _editMember(p, m), icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('Edit')),
+                          if (!isOwner && (m.status == 'active' || m.status == 'pending' || m.status == 'declined')) OutlinedButton.icon(onPressed: () => _editMemberAccess(p, m), icon: const Icon(Icons.tune_outlined, size: 16), label: const Text('Access')),
                           if (m.uid.isNotEmpty && !isOwner)
                             IconButton(tooltip: 'Remove member', icon: const Icon(Icons.delete_outline, color: Color(0xFFD32F2F)), onPressed: () => _confirmRemoveMember(p, m)),
                         ])
@@ -512,6 +440,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   try { await p.setFlockMemberStatus(m.uid, m.status == 'suspended' ? 'active' : 'suspended', flockId: m.flockId); Navigator.pop(ctx); _showAllMembers(p, members); }
                   catch (e) { _snack('Unable to change member status: $e'); }
                 }),
+              if (!isOwner && (m.status == 'active' || m.status == 'pending' || m.status == 'declined'))
+                IconButton(tooltip: 'Feature access', icon: const Icon(Icons.tune_outlined), onPressed: () { Navigator.pop(ctx); _editMemberAccess(p, m); }),
               if (m.uid.isNotEmpty && !isOwner) IconButton(tooltip: 'Remove member', icon: const Icon(Icons.delete_outline, color: Color(0xFFD32F2F)), onPressed: () { Navigator.pop(ctx); _confirmRemoveMember(p, m); }),
             ]),
           );
@@ -544,6 +474,36 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 
+  Future<void> _editMemberAccess(PoultryProvider p, FlockMembership m) async {
+    final defaults = Map<String, bool>.from(FirebaseService.defaultMemberFeatureAccess);
+    defaults.addAll(m.featureAccess);
+    final labels = <String, String>{
+      'reports': 'Reports', 'expenses': 'Expenses / Transactions', 'medical': 'Medical',
+      'feed': 'Feed', 'grit': 'Grit', 'tray': 'Tray', 'otherExpenses': 'Other Expenses',
+      'eggSales': 'Egg Sales', 'suppliers': 'Suppliers',
+    };
+    final values = Map<String, bool>.from(defaults);
+    final saved = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
+      title: Text('Feature access: ${m.displayName.isEmpty ? m.email : m.displayName}'),
+      content: SizedBox(width: 430, child: ListView(shrinkWrap: true, children: [
+        const ListTile(leading: Icon(Icons.info_outline), title: Text('Dashboard and Daily Log are always available to members.'), subtitle: Text('Enable additional features below as needed.')),
+        ...labels.entries.map((entry) => CheckboxListTile(value: values[entry.key] == true, title: Text(entry.value), onChanged: (v) => setDialogState(() => values[entry.key] = v == true))),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save access'))],
+    )));
+    if (saved != true || !mounted) return;
+    try {
+      if (m.uid.isNotEmpty) {
+        await p.updateMemberFeatureAccess(m.uid, values, flockId: m.flockId);
+      } else {
+        await p.updateInvitationFeatureAccess(m.email, values, flockId: m.flockId);
+      }
+      if (mounted) _snack('Member feature access updated.');
+    } catch (e) {
+      if (mounted) _snack('Unable to update feature access: $e');
+    }
+  }
+
   Future<void> _editMember(PoultryProvider p, FlockMembership m) async {
     final c=TextEditingController(text:m.mobileNumber);
     final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text('Member: ${m.displayName.isEmpty?m.email:m.displayName}'),content:TextField(controller:c,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'Mobile number',border:OutlineInputBorder())),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Save'))]));
@@ -556,23 +516,5 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     await showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('All Suppliers'), content: SizedBox(width: 560, height: 480, child: ListView.separated(itemCount: p.suppliers.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (_, i) { final s=p.suppliers[i]; return ListTile(leading: CircleAvatar(backgroundColor: const Color(0xFFE6F5ED), child: Text(s.fullName.isEmpty?'S':s.fullName[0].toUpperCase(),style:const TextStyle(color:Color(0xFF087A4F)))), title: Text(s.fullName), subtitle: Text([s.contactNumber,s.businessAddress].where((x)=>x.isNotEmpty).join(' • '), maxLines:2, overflow:TextOverflow.ellipsis), trailing: IconButton(icon:const Icon(Icons.edit_outlined),onPressed:(){Navigator.pop(ctx);_editSupplier(s);}),); })), actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
   }
 
-  Widget _notificationsSection(PoultryProvider p) => _section('Notifications', Icons.notifications_active_outlined, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Enable flock notifications'),value:_notificationsEnabled,onChanged:(v)=>setState(()=>_notificationsEnabled=v)),
-    SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Daily report reminder'),value:_dailyReminderEnabled,onChanged:(v)=>setState(()=>_dailyReminderEnabled=v)),
-    Wrap(spacing:10,runSpacing:10,children:[_timeTile('Reminder time',_reminderTime,(){_pickTime(true);}),_timeTile('Second reminder',_secondReminderTime,(){_pickTime(false);})]),
-    SwitchListTile(contentPadding:EdgeInsets.zero,title:const Text('Enable second reminder'),value:_secondReminderEnabled,onChanged:(v)=>setState(()=>_secondReminderEnabled=v)),
-    const Divider(height:28),
-    const Text('Daily Report Reminder — configurable localization',style:TextStyle(fontWeight:FontWeight.w800)),const SizedBox(height:8),
-    TextField(controller:_notifTitleEn,decoration:const InputDecoration(labelText:'Title — English',border:OutlineInputBorder())),const SizedBox(height:8),
-    TextField(controller:_notifTitleHi,decoration:const InputDecoration(labelText:'Title — Hindi',border:OutlineInputBorder())),const SizedBox(height:8),
-    TextField(controller:_notifBodyEn,maxLines:2,decoration:const InputDecoration(labelText:'Message — English',helperText:'Variables: {memberName}, {flockName}, {breedName}, {date}',border:OutlineInputBorder())),const SizedBox(height:8),
-    TextField(controller:_notifBodyHi,maxLines:2,decoration:const InputDecoration(labelText:'Message — Hindi',helperText:'Variables: {memberName}, {flockName}, {breedName}, {date}',border:OutlineInputBorder())),const SizedBox(height:10),
-    Row(children:[Expanded(child:FilledButton.icon(onPressed:()=>_saveNotifications(p),icon:const Icon(Icons.save_outlined),label:const Text('Save Notification Settings'))),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>_sendAnnouncement(p),icon:const Icon(Icons.send_outlined),label:const Text('Send Test / Announcement'))])
-  ]));
-
-  Widget _timeTile(String label, TimeOfDay time, VoidCallback onTap)=>SizedBox(width:220,child:ListTile(shape:RoundedRectangleBorder(side:const BorderSide(color:Color(0xFFDCE7E0)),borderRadius:BorderRadius.circular(8)),title:Text(label),subtitle:Text(time.format(context)),trailing:const Icon(Icons.schedule),onTap:onTap));
-  Future<void> _pickTime(bool first) async { final t=await showTimePicker(context:context,initialTime:first?_reminderTime:_secondReminderTime); if(t!=null)setState(()=>first?_reminderTime=t:_secondReminderTime=t); }
-  Future<void> _saveNotifications(PoultryProvider p) async { try { await p.saveNotificationSettings({'enabled':_notificationsEnabled,'dailyReportReminder':_dailyReminderEnabled,'secondReminderEnabled':_secondReminderEnabled,'reminderHour':_reminderTime.hour,'reminderMinute':_reminderTime.minute,'secondReminderHour':_secondReminderTime.hour,'secondReminderMinute':_secondReminderTime.minute,'timezone':'Asia/Kolkata'}); await p.saveNotificationTemplate('daily_report_reminder',{'titleEn':_notifTitleEn.text.trim(),'titleHi':_notifTitleHi.text.trim(),'bodyEn':_notifBodyEn.text.trim(),'bodyHi':_notifBodyHi.text.trim(),'enabled':_dailyReminderEnabled,'reminderHour':_reminderTime.hour,'reminderMinute':_reminderTime.minute,'secondReminderHour':_secondReminderTime.hour,'secondReminderMinute':_secondReminderTime.minute,'secondReminderEnabled':_secondReminderEnabled}); _snack('Notification settings saved.'); } catch(e){_snack('Unable to save notifications: $e');} }
-  Future<void> _sendAnnouncement(PoultryProvider p) async { try { await p.sendFlockNotification(titleEn:_notifTitleEn.text.trim(),titleHi:_notifTitleHi.text.trim(),bodyEn:_notifBodyEn.text.trim(),bodyHi:_notifBodyHi.text.trim()); _snack('Notification queued for flock members.'); } catch(e){_snack('Unable to send notification: $e');} }
   Widget _section(String title, IconData icon, Widget child) => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, color: const Color(0xFF087A4F)), const SizedBox(width: 8), Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))]), const SizedBox(height: 12), child]));
 }

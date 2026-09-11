@@ -1,17 +1,24 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/flock.dart';
 import '../providers/poultry_provider.dart';
 import '../services/cashew_sqlite_importer.dart';
 import '../services/app_sql_export.dart';
 import '../services/sql_file_saver.dart';
+import '../services/backup_file_saver.dart';
 import '../services/farm_config.dart';
+import '../services/bv300_metrics_pdf_service.dart';
+import '../services/poultry_standard_prompt.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 import 'admin_panel_screen.dart';
@@ -39,13 +46,134 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _secondReminderEnabled = false;
   TimeOfDay _reminderTime = const TimeOfDay(hour: 20, minute: 0);
   TimeOfDay _secondReminderTime = const TimeOfDay(hour: 22, minute: 0);
-  bool _configLoaded = false;
   int _selectedSetting = 0;
+  final Set<String> _selectedMetricKeys = <String>{'hdep', 'hhpe', 'fcr_mass', 'water_feed'};
+  final List<Map<String, dynamic>> _customStandardProfiles = <Map<String, dynamic>>[];
 
   @override
   void initState() {
     super.initState();
     _loadConfig();
+    _loadCustomStandardProfiles();
+  }
+
+  Future<void> _loadCustomStandardProfiles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList('custom_poultry_standard_profiles') ?? <String>[];
+      final decoded = <Map<String, dynamic>>[];
+      for (final item in raw) {
+        final value = jsonDecode(item);
+        if (value is Map<String, dynamic>) decoded.add(value);
+      }
+      if (mounted) setState(() { _customStandardProfiles..clear()..addAll(decoded); });
+    } catch (_) {}
+  }
+
+  Future<void> _persistCustomStandardProfiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      'custom_poultry_standard_profiles',
+      _customStandardProfiles.map((e) => jsonEncode(e)).toList(),
+    );
+  }
+
+  Future<void> _showStandardPrompt() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Standard Generation Prompt'),
+        content: SizedBox(
+          width: 720,
+          child: SingleChildScrollView(
+            child: SelectableText(PoultryStandardPrompt.text, style: const TextStyle(fontSize: 11, height: 1.45)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(const ClipboardData(text: PoultryStandardPrompt.text));
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Standard prompt copied to clipboard.')));
+            },
+            child: const Text('Copy Prompt'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              await Share.share(PoultryStandardPrompt.text, subject: 'Poultry Standard JSON Prompt');
+            },
+            icon: const Icon(Icons.share_outlined),
+            label: const Text('Share'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _importStandardJson() async {
+    final controller = TextEditingController();
+    try {
+      final result = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Add Standard Metrics from JSON'),
+          content: SizedBox(
+            width: 720,
+            child: TextField(
+              controller: controller,
+              maxLines: 18,
+              decoration: const InputDecoration(
+                hintText: '{\n  "breed_metadata": {...},\n  "weekly_performance_matrix": [...]\n}',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Validate & Add')),
+          ],
+        ),
+      );
+      if (result == null || result.isEmpty || !mounted) return;
+      final decoded = jsonDecode(result);
+      if (decoded is! Map<String, dynamic>) throw const FormatException('Root JSON must be an object.');
+      final metadata = decoded['breed_metadata'];
+      final weekly = decoded['weekly_performance_matrix'];
+      if (metadata is! Map<String, dynamic> || weekly is! List || weekly.isEmpty) {
+        throw const FormatException('Required breed_metadata and weekly_performance_matrix are missing or invalid.');
+      }
+      final breedName = (metadata['breed_name'] ?? metadata['strain'] ?? 'Custom strain').toString();
+      final weeks = weekly.whereType<Map>().map((e) => (e['week_number'] as num?)?.toInt()).whereType<int>().toList()..sort();
+      if (weeks.isEmpty || weeks.first < 1) throw const FormatException('weekly_performance_matrix must contain valid week_number values.');
+      if (weeks.toSet().length != weeks.length) throw const FormatException('Each week_number must be unique.');
+      final profile = <String, dynamic>{
+        'breed_metadata': metadata,
+        'weekly_performance_matrix': weekly,
+        'environmental_correction_matrix': decoded['environmental_correction_matrix'] ?? <dynamic>[],
+        'diagnostic_health_indicators': decoded['diagnostic_health_indicators'] ?? <dynamic>[],
+        'imported_at': DateTime.now().toIso8601String(),
+      };
+      setState(() => _customStandardProfiles.add(profile));
+      await _persistCustomStandardProfiles();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$breedName standard added (${weeks.length} weekly records).')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invalid standard JSON: $e')));
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _removeCustomStandard(int index) async {
+    final name = (_customStandardProfiles[index]['breed_metadata'] as Map?)?['breed_name']?.toString() ?? 'Custom standard';
+    final confirmed = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+      title: const Text('Remove standard?'),
+      content: Text('Remove "$name" from this device? This does not change historical flock records.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove'))],
+    ));
+    if (confirmed != true) return;
+    setState(() => _customStandardProfiles.removeAt(index));
+    await _persistCustomStandardProfiles();
   }
 
   Future<void> _loadConfig() async {
@@ -56,7 +184,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       final config = provider.farmConfig;
       _applyConfig(config);
-      if (mounted) setState(() => _configLoaded = true);
     } catch (_) {}
   }
 
@@ -132,6 +259,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Unable to delete old Cashew data: $e')),
       );
+    } finally {
+      if (mounted) setState(() { _importing = false; _importStatus = ''; });
+    }
+  }
+
+  Future<void> _exportFlockBackup() async {
+    if (_importing || !mounted) return;
+    final provider = context.read<PoultryProvider>();
+    final flocks = provider.flocks;
+    if (flocks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No flocks are available to export.')));
+      return;
+    }
+
+    final selected = await showDialog<Flock>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Export Flock Data'),
+        content: SizedBox(
+          width: 460,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: flocks.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, index) {
+              final flock = flocks[index];
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(flock.isActive ? Icons.play_circle_outline : Icons.history_outlined, color: flock.isActive ? const Color(0xFF0E9F6E) : const Color(0xFF7A8B83)),
+                title: Text(flock.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text('${flock.isActive ? 'Running' : 'Ended'} • ${DateFormat('dd MMM yyyy').format(flock.startDate)}${flock.endDate == null ? '' : ' – ${DateFormat('dd MMM yyyy').format(flock.endDate!)}'}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(dialogContext, flock),
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))],
+      ),
+    );
+    if (selected == null || !mounted) return;
+
+    setState(() { _importing = true; _importStatus = 'Preparing ${selected.name} backup…'; });
+    try {
+      final backup = await provider.exportFlockBackup(selected.id);
+      final json = const JsonEncoder.withIndent('  ').convert(backup);
+      final safeName = selected.name.replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_').replaceAll(RegExp(r'_+'), '_').replaceAll(RegExp(r'^_|_$'), '');
+      final fileName = 'flock_${safeName.isEmpty ? selected.id : safeName}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
+      final savedPath = await saveBackupFile(Uint8List.fromList(utf8.encode(json)), fileName);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(savedPath == null || savedPath.isEmpty ? 'Backup export cancelled.' : 'Flock backup exported: $savedPath')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Flock backup export failed: $e')));
+    } finally {
+      if (mounted) setState(() { _importing = false; _importStatus = ''; });
+    }
+  }
+
+  Future<void> _importFlockBackup() async {
+    if (_importing) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: true,
+    );
+    final bytes = result?.files.single.bytes;
+    if (bytes == null || bytes.isEmpty) return;
+
+    setState(() { _importing = true; _importStatus = 'Reading backup…'; });
+    try {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is! Map) throw const FormatException('Backup JSON must contain an object.');
+      final backup = Map<String, dynamic>.from(decoded);
+      final provider = context.read<PoultryProvider>();
+      final count = await provider.importFlockBackup(
+        backup,
+        onProgress: (message) {
+          if (mounted) setState(() => _importStatus = message);
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup restored successfully ($count records processed).')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup import failed: $e')));
     } finally {
       if (mounted) setState(() { _importing = false; _importStatus = ''; });
     }
@@ -214,6 +426,185 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Widget _flockPerformanceMetricsPanel() {
+    final provider = context.watch<PoultryProvider>();
+    final flock = provider.activeFlock;
+    final metricList = BV300MetricsPdfService.metrics(
+      startingBirds: provider.startingBirdsAtDayZero,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _settingsSectionHeader(
+          icon: Icons.insights_outlined,
+          title: 'Flock Performance Metrics',
+          subtitle: 'Review all available BV300 performance KPIs and export selected metrics as PDF.',
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE2EAE5))),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Standard Library', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              const Text('Import a complete strain standard as JSON. The app validates age-based weekly data and keeps each strain separate.', style: TextStyle(fontSize: 10.5, color: Color(0xFF718179), height: 1.35)),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                OutlinedButton.icon(onPressed: _importing ? null : _importStandardJson, icon: const Icon(Icons.data_object), label: const Text('Add Metrics from JSON')),
+                OutlinedButton.icon(onPressed: _showStandardPrompt, icon: const Icon(Icons.share_outlined), label: const Text('Share Standard Prompt')),
+              ]),
+              if (_customStandardProfiles.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                ...List.generate(_customStandardProfiles.length, (index) {
+                  final metadata = _customStandardProfiles[index]['breed_metadata'];
+                  final name = metadata is Map ? (metadata['breed_name'] ?? metadata['strain'] ?? 'Custom strain').toString() : 'Custom strain';
+                  final weekly = _customStandardProfiles[index]['weekly_performance_matrix'];
+                  return ListTile(contentPadding: EdgeInsets.zero, dense: true, leading: const Icon(Icons.verified_outlined, color: Color(0xFF7C3AED)), title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${weekly is List ? weekly.length : 0} weekly benchmark records'), trailing: IconButton(tooltip: 'Remove', onPressed: () => _removeCustomStandard(index), icon: const Icon(Icons.delete_outline, color: Colors.redAccent)));
+                }),
+              ],
+            ]),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (flock == null)
+          _settingsInfoCard('No flock selected', 'Select a running or historical flock to view and export its performance metrics.')
+        else ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7FBF8),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFDCE9E1)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.home_work_outlined, color: Color(0xFF0E9F6E)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${flock.name} • ${provider.logs.length} daily log(s)',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1A2D24)),
+                  ),
+                ),
+                Text('${_selectedMetricKeys.length} selected', style: const TextStyle(fontSize: 11, color: Color(0xFF60736A))),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Available metrics', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF1A2D24))),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _selectedMetricKeys.addAll(metricList.map((m) => m.key))),
+                child: const Text('Select all'),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _selectedMetricKeys.clear()),
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...metricList.map((metric) {
+            final selected = _selectedMetricKeys.contains(metric.key);
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13), side: const BorderSide(color: Color(0xFFE2EAE5))),
+              child: CheckboxListTile(
+                value: selected,
+                onChanged: (value) => setState(() {
+                  if (value == true) {
+                    _selectedMetricKeys.add(metric.key);
+                  } else {
+                    _selectedMetricKeys.remove(metric.key);
+                  }
+                }),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                title: Text(metric.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
+                subtitle: Text('Unit: ${metric.unit}\nStandard: ${metric.standard}\nAction: ${metric.action}', style: const TextStyle(fontSize: 10, height: 1.35)),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _selectedMetricKeys.isEmpty || provider.logs.isEmpty || _importing
+                  ? null
+                  : () => _exportSelectedMetricsPdf(provider, flock),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: Text(_importing ? 'Preparing PDF…' : 'Export Selected Metrics as PDF'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'The PDF contains the selected metric, daily actual values, flock age/week, expected standard and action limit. Metrics that require inputs not stored in Daily Log are shown as target-only in the BV300 analytics dashboard and are not exported as actual observations.',
+            style: TextStyle(fontSize: 10, color: Color(0xFF718179), height: 1.4),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _exportSelectedMetricsPdf(PoultryProvider provider, Flock flock) async {
+    if (_selectedMetricKeys.isEmpty || provider.logs.isEmpty) return;
+    setState(() => _importing = true);
+    try {
+      await BV300MetricsPdfService.export(
+        flock: flock,
+        logs: provider.logs,
+        startingBirds: provider.startingBirdsAtDayZero,
+        metricKeys: _selectedMetricKeys.toList(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Performance metrics PDF prepared successfully.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to export metrics PDF: $e')));
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Widget _settingsSectionHeader({required IconData icon, required String title, required String subtitle}) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(color: const Color(0xFFE7F6EE), borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, color: const Color(0xFF0E9F6E)),
+      ),
+      const SizedBox(width: 11),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF1A2D24))),
+        const SizedBox(height: 3),
+        Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Color(0xFF718179), height: 1.35)),
+      ])),
+    ],
+  );
+
+  Widget _settingsInfoCard(String title, String message) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(color: const Color(0xFFF8FAF9), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE1E9E4))),
+    child: Row(children: [
+      const Icon(Icons.info_outline, color: Color(0xFF0E9F6E)),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 3),
+        Text(message, style: const TextStyle(fontSize: 11, color: Color(0xFF718179))),
+      ])),
+    ]),
+  );
+
   @override
   Widget build(BuildContext context) {
     final provider = context.read<PoultryProvider>();
@@ -235,18 +626,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final panels = <Widget>[
       _flockConfigurationPanel(),
+      _flockPerformanceMetricsPanel(),
       _accountsPanel(),
       _feedCatalogPanel(),
       _categoriesPanel(),
       _notificationsPanel(),
       _dataManagementPanel(),
-      const AdminPanelScreen(embedded: true, adminOnly: true),
+      const AdminPanelScreen(embedded: true, adminOnly: true, showSuppliers: true, showMembers: false),
     ];
 
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 900;
-        final selected = _selectedSetting.clamp(0, panels.length - 1);
+        final int selected = _selectedSetting.clamp(0, panels.length - 1).toInt();
         final body = panels[selected];
 
         if (!wide) {
@@ -334,13 +726,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _settingsCategoryList({bool compact = false}) {
     const items = <_SettingsCategory>[
-      _SettingsCategory('Flock Configuration', 'Farm and flock details', Icons.home_work_outlined, Color(0xFF0E9F6E)),
+      _SettingsCategory('Flock Configuration', 'Flocks, members and invitations', Icons.home_work_outlined, Color(0xFF0E9F6E)),
+      _SettingsCategory('Flock Performance', 'BV300 KPIs and PDF export', Icons.insights_outlined, Color(0xFF7C3AED)),
       _SettingsCategory('Accounts', 'Saved expense accounts', Icons.account_balance_wallet_outlined, Color(0xFF0891B2)),
       _SettingsCategory('Feed Catalog', 'Shared feed items', Icons.grass_outlined, Color(0xFFF59E0B)),
       _SettingsCategory('Categories', 'Manage categories and subcategories', Icons.category_outlined, Color(0xFFDB2777)),
       _SettingsCategory('Notifications', 'Flock notification settings', Icons.notifications_active_outlined, Color(0xFFEA580C)),
       _SettingsCategory('Data Management', 'Backup, import and export', Icons.storage_outlined, Color(0xFF2563EB)),
-      _SettingsCategory('Administration', 'Members and suppliers', Icons.admin_panel_settings_outlined, Color(0xFF7C3AED)),
+      _SettingsCategory('Suppliers', 'Manage supplier contacts and categories', Icons.local_shipping_outlined, Color(0xFF0EA5A4)),
     ];
 
     final list = Column(
@@ -761,12 +1154,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _flockConfigurationPanel() => AppCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _panelTitle('Flock Configuration', 'Manage running flocks and their saved expense accounts', Icons.home_work_outlined),
-          const SizedBox(height: 14),
-          _flockListSection(),
-        ]),
+  Widget _flockConfigurationPanel() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _panelTitle('Flock Configuration', 'Manage running flocks, members and invitations', Icons.home_work_outlined),
+              const SizedBox(height: 14),
+              _flockListSection(),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          const AdminPanelScreen(embedded: true, adminOnly: true, showSuppliers: false, showMembers: true),
+        ],
       );
 
   Future<void> _showSavedAccountDialog({String? existing}) async {
@@ -979,14 +1379,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(color: const Color(0xFFF5FAF7), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFDCE7E0))),
-              child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.info_outline, color: Color(0xFF0E9F6E)), SizedBox(width: 10), Expanded(child: Text('Export financial records as SQL or import Cashew SQLite/SQL data. Imported records use deterministic IDs and never create Daily Logs.', style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157))))]),
+              child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.info_outline, color: Color(0xFF0E9F6E)), SizedBox(width: 10), Expanded(child: Text('Export a complete backup for any running or ended flock, restore a previous backup, or import external financial data. Flock backups include the flock and its daily logs, financial records, members, invitations and notification configuration.', style: TextStyle(fontSize: 11, height: 1.45, color: Color(0xFF456157))))]),
             ),
             const SizedBox(height: 12),
+            SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: _importing ? null : _exportFlockBackup, icon: const Icon(Icons.folder_zip_outlined), label: const Text('Export Flock Data'))),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: _importing ? null : _importFlockBackup, icon: const Icon(Icons.restore_outlined), label: const Text('Import Data from Backup'))),
+            const SizedBox(height: 8),
             SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: _importing ? null : _exportFinancialSql, icon: const Icon(Icons.download_outlined), label: const Text('Export Financial Data as SQL'))),
             const SizedBox(height: 8),
             SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseRecordsScreen())), icon: const Icon(Icons.account_tree_outlined), label: const Text('Manage & Group Expenses'))),
             const SizedBox(height: 8),
-            SizedBox(height: 48, width: double.infinity, child: FilledButton.icon(onPressed: _importing ? null : _importCashewData, icon: _importing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.upload_file_outlined), label: Text(_importing ? (_importStatus.isEmpty ? 'Importing…' : _importStatus) : 'Sync Cashew SQLite Data'))),
+            SizedBox(height: 48, width: double.infinity, child: FilledButton.icon(onPressed: _importing ? null : _importCashewData, icon: _importing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.upload_file_outlined), label: Text(_importing ? (_importStatus.isEmpty ? 'Importing…' : _importStatus) : 'Import External Data'))),
             const SizedBox(height: 8),
             SizedBox(width: double.infinity, height: 42, child: OutlinedButton.icon(onPressed: _importing ? null : _deleteImportedCashewData, icon: const Icon(Icons.delete_outline, color: Colors.red), label: const Text('Delete Old Imported Cashew Data'), style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: const BorderSide(color: Color(0xFFE5BDBD))))),
           ],

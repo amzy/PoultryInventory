@@ -72,8 +72,9 @@ class FlockMembership {
   final String notificationLanguage;
   final String status;
   final bool invitationReported;
+  final Map<String, bool> featureAccess;
 
-  const FlockMembership({this.uid = '', required this.flockId, required this.role, required this.email, required this.displayName, this.mobileNumber = '', this.notificationLanguage = 'en', this.status = 'active', this.invitationReported = false});
+  const FlockMembership({this.uid = '', required this.flockId, required this.role, required this.email, required this.displayName, this.mobileNumber = '', this.notificationLanguage = 'en', this.status = 'active', this.invitationReported = false, this.featureAccess = const {}});
 
   bool get isAdmin => role == 'admin';
 
@@ -87,5 +88,11 @@ class FlockMembership {
     notificationLanguage: data['notificationLanguage']?.toString() == 'hi' ? 'hi' : 'en',
     status: ['pending','declined','active','suspended'].contains(data['status']?.toString()) ? data['status'].toString() : 'active',
     invitationReported: data['permanentlyReported'] == true,
+    featureAccess: _featureAccess(data['featureAccess']),
   );
+
+  static Map<String, bool> _featureAccess(dynamic raw) {
+    if (raw is! Map) return const {};
+    return raw.map((key, value) => MapEntry(key.toString(), value == true));
+  }
 }

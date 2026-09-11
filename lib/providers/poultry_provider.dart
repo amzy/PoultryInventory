@@ -10,6 +10,7 @@ import '../services/firebase_service.dart';
 import '../services/farm_config.dart';
 import '../services/expense_category_config.dart';
 import '../services/notification_service.dart';
+import '../services/bv300_analytics_service.dart';
 
 class PoultryProvider with ChangeNotifier {
   final FirebaseService _firebase = FirebaseService();
@@ -23,13 +24,14 @@ class PoultryProvider with ChangeNotifier {
   bool _expenseRecordsLoaded = false;
   bool _expenseRecordsLoading = false;
   Future<void>? _expenseLoadFuture;
+  String? _expenseRecordsError;
 
   bool _isLoading = false;
   FarmConfig _farmConfig = FarmConfig.defaults;
   List<Flock> _flocks = [];
   Flock? _activeFlock;
-  String? _localActiveFlockId;
   bool _isAdmin = false;
+  Map<String, bool> _featureAccess = {};
   String? _errorMessage;
   StreamSubscription? _authSub;
   List<PoultryLog> get logs => List.unmodifiable(_logs);
@@ -46,6 +48,8 @@ class PoultryProvider with ChangeNotifier {
   List<Flock> get flocks => List.unmodifiable(_flocks);
   Flock? get activeFlock => _activeFlock;
   bool get isAdmin => _isAdmin;
+  bool hasFeature(String feature) => _isAdmin || (_featureAccess[feature] ?? false);
+  Map<String, bool> get featureAccess => Map.unmodifiable(_featureAccess);
   String get activeFlockId => _activeFlock?.id ?? '';
   bool get hasFlock => _activeFlock != null;
   PoultryProvider() { _authSub = _firebase.authChanges.listen((_) { if (_firebase.isSignedIn) { _startup(); } else { _resetLocal(); } }); _startup(); }
@@ -73,7 +77,8 @@ class PoultryProvider with ChangeNotifier {
       _logs = [];
       _expenseRecords = [];
       _activeFlock = null;
-      _farmConfig = FarmConfig.defaults;
+      _farmConfig = FarmConfig(flockStartDate: DateTime.now(), startingBirds: 0, breedName: '', accounts: const [], feedItems: const []);
+      _featureAccess = {};
       return;
     }
     final prefs = await SharedPreferences.getInstance();
@@ -83,7 +88,7 @@ class PoultryProvider with ChangeNotifier {
     final running = _flocks.where((f) => f.isActive).toList();
     final selected = matches.isNotEmpty ? matches.first : (running.isNotEmpty ? running.first : _flocks.first);
     _activeFlock = selected;
-    _localActiveFlockId = selected.id;
+    _featureAccess = await _firebase.fetchActiveFlockFeatureAccess(selected.id);
     await prefs.setString('active_flock_${_firebase.currentUser?.uid ?? ''}', selected.id);
     _firebase.setActiveFlock(selected.id);
     // Critical dashboard data is loaded first. Financial records, catalogs and
@@ -95,6 +100,8 @@ class PoultryProvider with ChangeNotifier {
     _expenseRecords = [];
     _expenseRecordsLoaded = false;
     _expenseRecordsLoading = false;
+    _expenseLoadFuture = null;
+    _expenseRecordsError = null;
 
     _farmConfig = FarmConfig(
       flockStartDate: selected.startDate,
@@ -144,33 +151,58 @@ class PoultryProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadExpenseRecords({bool force = false}) {
-    if (_expenseLoadFuture != null && !force) return _expenseLoadFuture!;
-    if (_expenseRecordsLoaded && !force) return Future.value();
-    _expenseRecordsLoading = true;
-    final future = _firebase.fetchExpenseRecords().then((records) {
-      _expenseRecords = List<ExpenseSalesLog>.from(records)..sort((a,b)=>b.date.compareTo(a.date));
+  Future<void> loadExpenseRecords({bool force = false}) async {
+    if (!isAdmin && !hasFeature('expenses')) {
+      _expenseRecords = [];
       _expenseRecordsLoaded = true;
       _expenseRecordsLoading = false;
-      notifyListeners();
-    }).catchError((error) {
-      _expenseRecordsLoading = false;
-      _expenseLoadFuture = null;
-      throw error;
-    });
+      _expenseRecordsError = null;
+      return;
+    }
+    if (_expenseRecordsLoaded && !force) return;
+    if (_expenseLoadFuture != null && !force) return _expenseLoadFuture!;
+
+    _expenseRecordsLoading = true;
+    _expenseRecordsError = null;
+    notifyListeners();
+
+    final future = _loadExpenseRecordsInternal();
     _expenseLoadFuture = future;
-    return future;
+    try {
+      await future;
+    } finally {
+      if (identical(_expenseLoadFuture, future)) _expenseLoadFuture = null;
+    }
+  }
+
+  Future<void> _loadExpenseRecordsInternal() async {
+    try {
+      final records = await _firebase.fetchExpenseRecords().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException('Financial records took too long to load.'),
+      );
+      _expenseRecords = List<ExpenseSalesLog>.from(records)..sort((a, b) => b.date.compareTo(a.date));
+      _expenseRecordsLoaded = true;
+      _expenseRecordsError = null;
+    } catch (error) {
+      _expenseRecords = [];
+      _expenseRecordsLoaded = true;
+      _expenseRecordsError = error.toString();
+    } finally {
+      _expenseRecordsLoading = false;
+      notifyListeners();
+    }
   }
 
   bool get expenseRecordsLoaded => _expenseRecordsLoaded;
   bool get expenseRecordsLoading => _expenseRecordsLoading;
+  String? get expenseRecordsError => _expenseRecordsError;
 
   Future<void> selectFlock(String flockId) async {
     final matches = _flocks.where((f) => f.id == flockId).toList();
     final flock = matches.isNotEmpty ? matches.first : await _firebase.fetchFlock(flockId);
     if (flock == null) throw StateError('Flock not found.');
     _activeFlock = flock;
-    _localActiveFlockId = flock.id;
     _firebase.setActiveFlock(flock.id);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('active_flock_${_firebase.currentUser?.uid ?? ''}', flock.id);
@@ -219,6 +251,8 @@ class PoultryProvider with ChangeNotifier {
   Future<List<FlockMembership>> fetchFlockMembers(String flockId) => _firebase.fetchMembers(flockId);
   Stream<List<FlockMembership>> watchFlockMembers(String flockId) => _firebase.watchMemberStatuses(flockId);
   Future<int> syncInvitedMembers(String flockId) => _firebase.syncInvitedMembers(flockId);
+  Future<void> updateMemberFeatureAccess(String uid, Map<String, bool> access, {String? flockId}) async { await _firebase.updateMemberFeatureAccess(flockId ?? activeFlockId, uid, access); }
+  Future<void> updateInvitationFeatureAccess(String email, Map<String, bool> access, {String? flockId}) async { await _firebase.updateInvitationFeatureAccess(flockId ?? activeFlockId, email, access); }
   Future<void> inviteFlockMember(String email, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.inviteMember(flockId: id, email: email); }
   Future<void> resendFlockInvitation(String invitationId, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.resendInvitation(id, invitationId); }
   Future<List<Map<String, dynamic>>> pendingInvitations() => _firebase.pendingInvitationsForEmail(_firebase.currentUser?.email ?? '');
@@ -233,9 +267,11 @@ class PoultryProvider with ChangeNotifier {
   Future<void> updateMemberRole(String uid, String role, {String? flockId}) => _firebase.updateMemberRole(flockId ?? activeFlockId, uid, role);
   Future<void> removeFlockMember(String uid, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.removeMember(id, uid); }
   Future<void> setFlockMemberStatus(String uid, String status, {String? flockId}) async { final id = flockId ?? activeFlockId; if (id.isEmpty) throw StateError('Select a flock first.'); await _firebase.setMemberStatus(id, uid, status); }
+  Future<Map<String, dynamic>> exportFlockBackup(String flockId) => _firebase.exportFlockBackup(flockId);
+  Future<int> importFlockBackup(Map<String, dynamic> backup, {void Function(String message)? onProgress}) async { final count = await _firebase.importFlockBackup(backup, onProgress: onProgress); await _reload(); notifyListeners(); return count; }
 
   void _resetLocal() {
-    _logs = []; _expenseRecords = []; _expenseRecordsLoaded = false; _expenseRecordsLoading = false; _expenseLoadFuture = null; _flocks = []; _activeFlock = null; _feedItems = List<String>.from(FarmConfig.defaultFeedItems); _expenseCategories = List<String>.from(ExpenseCategoryConfig.defaultMainCategories); _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories); _suppliers = []; _savedAccounts = List<String>.from(FarmConfig.defaultAccounts); ExpenseCategoryConfig.setMainCategories(_expenseCategories); ExpenseCategoryConfig.setSubcategories(_expenseSubcategories); _farmConfig = FarmConfig.defaults; _isAdmin = false; _errorMessage = null; notifyListeners();
+    _logs = []; _expenseRecords = []; _expenseRecordsLoaded = false; _expenseRecordsLoading = false; _expenseLoadFuture = null; _flocks = []; _activeFlock = null; _feedItems = List<String>.from(FarmConfig.defaultFeedItems); _expenseCategories = List<String>.from(ExpenseCategoryConfig.defaultMainCategories); _expenseSubcategories = List<String>.from(ExpenseCategoryConfig.defaultSubcategories); _suppliers = []; _savedAccounts = List<String>.from(FarmConfig.defaultAccounts); ExpenseCategoryConfig.setMainCategories(_expenseCategories); ExpenseCategoryConfig.setSubcategories(_expenseSubcategories); _farmConfig = FarmConfig.defaults; _isAdmin = false; _featureAccess = {}; _errorMessage = null; notifyListeners();
   }
 
   Future<void> fetchLogs() async { if(!_firebase.isSignedIn)return; final reloadExpenses=_expenseRecordsLoaded; _isLoading=true;notifyListeners();try{await _reload();if(reloadExpenses) await loadExpenseRecords(force:true);_errorMessage=null;}catch(e){_errorMessage='Error loading Firebase data: $e';}finally{_isLoading=false;notifyListeners();} }
@@ -350,18 +386,33 @@ class PoultryProvider with ChangeNotifier {
   @override void dispose(){_authSub?.cancel();super.dispose();}
   int get totalMortality=>_logs.fold(0,(s,e)=>s+e.mortality);
   int get startingBirdsAtDayZero => _farmConfig.startingBirds;
-  int get totalBirds => (startingBirdsAtDayZero - totalMortality).clamp(0, startingBirdsAtDayZero);
+  int get totalBirds => (startingBirdsAtDayZero - totalMortality).clamp(0, startingBirdsAtDayZero).toInt();
   double get mortalityPercentage => startingBirdsAtDayZero == 0 ? 0 : totalMortality / startingBirdsAtDayZero * 100;
   double layingPercentageFor(PoultryLog log) {
     final cumulative = _logs.where((x) => !x.date.isAfter(log.date)).fold<int>(0, (sum, x) => sum + x.mortality);
-    final alive = (startingBirdsAtDayZero - cumulative).clamp(0, startingBirdsAtDayZero);
+    final int alive = (startingBirdsAtDayZero - cumulative).clamp(0, startingBirdsAtDayZero).toInt();
     return alive == 0 ? 0 : (log.totalEggs / alive) * 100;
   }
   double get latestLayingPercentage => _logs.isEmpty ? 0 : layingPercentageFor(_logs.first);
   double get averageLayingPercentage => _logs.isEmpty ? 0 : _logs.map(layingPercentageFor).reduce((a,b)=>a+b)/_logs.length;
+  BV300AnalyticsSnapshot get bv300Analytics {
+    final ageDays = _activeFlock == null ? 0 : FarmConfig.flockAgeOnDate(DateTime.now(), startDate: _activeFlock!.startDate);
+    final latest = _logs.isEmpty ? null : _logs.first;
+    final cumulativeEggs = latest == null
+        ? null
+        : _logs.where((x) => !x.date.isAfter(latest.date)).fold<int>(0, (sum, x) => sum + x.totalEggs).toDouble();
+    return BV300AnalyticsService.evaluate(
+      ageDays: ageDays,
+      latestLog: latest,
+      livability: startingBirdsAtDayZero == 0 ? 0 : totalBirds / startingBirdsAtDayZero * 100,
+      layingPercentage: latest == null ? 0 : layingPercentageFor(latest),
+      cumulativeEggs: cumulativeEggs,
+      originalBirdsHoused: startingBirdsAtDayZero,
+    );
+  }
   int aliveBirdsOn(DateTime date) {
     final mortality = _logs.where((x) => !x.date.isAfter(date)).fold<int>(0, (sum, x) => sum + x.mortality);
-    return (startingBirdsAtDayZero - mortality).clamp(0, startingBirdsAtDayZero);
+    return (startingBirdsAtDayZero - mortality).clamp(0, startingBirdsAtDayZero).toInt();
   }
   double mortalityPercentageOn(DateTime date) => startingBirdsAtDayZero == 0 ? 0 : (startingBirdsAtDayZero - aliveBirdsOn(date)) / startingBirdsAtDayZero * 100;
   Future<void> saveSavedAccounts(List<String> accounts) async {

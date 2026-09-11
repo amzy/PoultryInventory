@@ -30,6 +30,30 @@ class CashewImportResult {
 }
 
 class FirebaseService {
+  static const Map<String, bool> defaultMemberFeatureAccess = {
+    'dashboard': true,
+    'dailyLog': true,
+    'reports': false,
+    'expenses': false,
+    'medical': false,
+    'feed': false,
+    'grit': false,
+    'tray': false,
+    'otherExpenses': false,
+    'eggSales': false,
+    'suppliers': false,
+  };
+
+  static Map<String, bool> normalizeFeatureAccess(dynamic raw) {
+    final result = Map<String, bool>.from(defaultMemberFeatureAccess);
+    if (raw is Map) {
+      for (final entry in raw.entries) {
+        if (result.containsKey(entry.key.toString())) result[entry.key.toString()] = entry.value == true;
+      }
+    }
+    return result;
+  }
+
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -77,31 +101,16 @@ class FirebaseService {
     // based on a hard-coded UID.
     if (snap.exists) return snap.data()?['role'] == 'admin';
 
-    final email = user.email?.trim().toLowerCase() ?? '';
-    var invited = false;
-    if (email.isNotEmpty) {
-      final invites = await _db.collectionGroup('invitations')
-          .where('email', isEqualTo: email)
-          .where('status', isEqualTo: 'pending')
-          .limit(1)
-          .get();
-      invited = invites.docs.isNotEmpty;
-    }
-
-    // A normal user must never be promoted to admin just because they are
-    // the first account seen by this device. Invited users become members.
-    if (invited) {
-      await ref.set({
-        'email': user.email ?? '',
-        'displayName': user.displayName ?? user.email ?? 'User',
-        'role': 'member',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      return false;
-    }
-
-    // No profile and no invitation: remain a normal authenticated user with
-    // no flock access until an admin invites the registered email.
+    // Do not query the invitation collection from the authentication/startup
+    // path. A member who has only a pending invitation is intentionally not
+    // allowed to read the parent flock document, and a collection-group
+    // invitation query can therefore make the whole dashboard startup fail
+    // with permission-denied. Invitations are loaded independently by the
+    // dashboard invitation card.
+    //
+    // A missing profile is simply treated as a member with no flock access
+    // until an invitation is explicitly accepted. This keeps authentication
+    // independent from invitation discovery and avoids blocking first paint.
     return false;
   }
 
@@ -122,6 +131,31 @@ class FirebaseService {
     final role = data['role']?.toString().trim().toLowerCase();
     final status = data['status']?.toString().trim().toLowerCase() ?? 'active';
     return (role == 'admin' || role == 'member') && status == 'active';
+  }
+
+  Future<Map<String, bool>> fetchActiveFlockFeatureAccess(String flockId) async {
+    if (await isAdmin()) return Map<String, bool>.from(defaultMemberFeatureAccess)..updateAll((key, value) => true);
+    if (flockId.trim().isEmpty) return Map<String, bool>.from(defaultMemberFeatureAccess);
+    try {
+      final snap = await _flocks.doc(flockId).collection('members').doc(_uid).get();
+      if (!snap.exists) return Map<String, bool>.from(defaultMemberFeatureAccess);
+      final data = snap.data() ?? const <String, dynamic>{};
+      final status = data['status']?.toString().trim().toLowerCase() ?? '';
+      if (status != 'active') return Map<String, bool>.from(defaultMemberFeatureAccess);
+      return normalizeFeatureAccess(data['featureAccess']);
+    } catch (_) {
+      return Map<String, bool>.from(defaultMemberFeatureAccess);
+    }
+  }
+
+  Future<void> updateMemberFeatureAccess(String flockId, String memberUid, Map<String, bool> access) async {
+    if (!await isAdmin()) throw StateError('Only an admin can manage member feature access.');
+    final normalized = normalizeFeatureAccess(access);
+    if (memberUid == _uid) return;
+    await _flocks.doc(flockId).collection('members').doc(memberUid).set({'featureAccess': normalized}, SetOptions(merge: true));
+    await _db.collection('users').doc(memberUid).collection('flock_memberships').doc(flockId).set({'featureAccess': normalized}, SetOptions(merge: true));
+    final invite = await _flocks.doc(flockId).collection('invitations').where('acceptedByUid', isEqualTo: memberUid).limit(1).get();
+    if (invite.docs.isNotEmpty) await invite.docs.first.reference.set({'featureAccess': normalized}, SetOptions(merge: true));
   }
 
   Future<List<Flock>> fetchFlocks() async {
@@ -322,7 +356,24 @@ class FirebaseService {
 
   Future<void> endFlock(String flockId, DateTime endDate) async {
     if (!await isAdmin()) throw StateError('Only an admin can end a flock.');
-    await _flocks.doc(flockId).update({'endDate': Timestamp.fromDate(DateTime(endDate.year, endDate.month, endDate.day)), 'state': 'ended', 'updatedAt': FieldValue.serverTimestamp()});
+    final flockRef = _flocks.doc(flockId);
+    await flockRef.update({
+      'endDate': Timestamp.fromDate(DateTime(endDate.year, endDate.month, endDate.day)),
+      'state': 'ended',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Keep invitation metadata in sync so pending member dashboards can hide
+    // ended flocks without reading the protected parent flock document.
+    final pending = await flockRef.collection('invitations')
+        .where('status', isEqualTo: 'pending')
+        .get();
+    if (pending.docs.isEmpty) return;
+    final batch = _db.batch();
+    for (final invite in pending.docs) {
+      batch.update(invite.reference, {'flockState': 'ended'});
+    }
+    await batch.commit();
   }
 
   Future<List<FlockMembership>> fetchMembers(String flockId) async {
@@ -358,6 +409,7 @@ class FirebaseService {
         'displayName': profile['displayName']?.toString().trim().isNotEmpty == true ? profile['displayName'].toString() : (data['displayName']?.toString() ?? email),
         'mobileNumber': profile['mobileNumber']?.toString() ?? data['mobileNumber']?.toString() ?? '',
         'notificationLanguage': profile['notificationLanguage']?.toString() == 'hi' ? 'hi' : 'en',
+        'featureAccess': normalizeFeatureAccess(data['featureAccess']),
       };
       await _flocks.doc(flockId).collection('members').doc(uid).set(membership, SetOptions(merge: true));
       await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set({...membership, 'flockId': flockId}, SetOptions(merge: true));
@@ -369,26 +421,83 @@ class FirebaseService {
 
   Stream<List<FlockMembership>> watchMemberStatuses(String flockId) {
     final controller = StreamController<List<FlockMembership>>();
-    List<FlockMembership> members = [];
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> invites = [];
+    List<FlockMembership> members = const [];
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> invites = const [];
+
     void emit() {
+      // Merge the two sources locally. Invitations are intentionally included
+      // even when no /members document exists yet (the normal state before the
+      // invited user accepts). An invitation is keyed by its document id so it
+      // cannot overwrite a real membership accidentally.
       final byKey = <String, FlockMembership>{};
-      for (final m in members) byKey['uid:${m.uid}'] = m;
+      for (final m in members) {
+        byKey['uid:${m.uid}'] = m;
+      }
       for (final d in invites) {
         final x = d.data();
-        final status = ['pending','declined'].contains(x['status']?.toString()) ? x['status'].toString() : null;
-        if (status == null) continue;
-        final email = x['email']?.toString() ?? '';
-        final key = 'invite:${d.id}';
-        byKey[key] = FlockMembership(flockId: flockId, uid: x['acceptedByUid']?.toString() ?? '', role: x['role']?.toString() == 'admin' ? 'admin' : 'member', email: email, displayName: x['displayName']?.toString() ?? email, status: status, invitationReported: x['permanentlyReported'] == true);
+        final invitationStatus = x['status']?.toString().trim().toLowerCase() ?? '';
+        if (invitationStatus != 'pending' && invitationStatus != 'declined') continue;
+        final email = x['email']?.toString().trim().toLowerCase() ?? '';
+        if (email.isEmpty) continue;
+        final invitationUid = x['acceptedByUid']?.toString().trim() ?? '';
+        final name = x['displayName']?.toString().trim() ?? '';
+        byKey['invite:${d.id}'] = FlockMembership(
+          flockId: flockId,
+          uid: invitationUid,
+          role: x['role']?.toString() == 'admin' ? 'admin' : 'member',
+          email: email,
+          displayName: name.isEmpty ? email : name,
+          status: invitationStatus,
+          invitationReported: x['permanentlyReported'] == true,
+        );
       }
+
       final list = byKey.values.toList();
-      list.sort((a,b) => a.status.compareTo(b.status) != 0 ? a.status.compareTo(b.status) : (a.displayName.isEmpty ? a.email : a.displayName).toLowerCase().compareTo((b.displayName.isEmpty ? b.email : b.displayName).toLowerCase()));
+      list.sort((a, b) {
+        final statusCompare = a.status.compareTo(b.status);
+        if (statusCompare != 0) return statusCompare;
+        final aName = (a.displayName.isEmpty ? a.email : a.displayName).toLowerCase();
+        final bName = (b.displayName.isEmpty ? b.email : b.displayName).toLowerCase();
+        return aName.compareTo(bName);
+      });
+
       if (!controller.isClosed) controller.add(list);
     }
-    final a = _flocks.doc(flockId).collection('members').snapshots().listen((snap) { members = snap.docs.map((d) => FlockMembership.fromFirestore(flockId, d.data(), uid:d.id)).toList(); emit(); }, onError: controller.addError);
-    final b = _flocks.doc(flockId).collection('invitations').snapshots().listen((snap) { invites = snap.docs; emit(); }, onError: controller.addError);
-    controller.onCancel = () async { await a.cancel(); await b.cancel(); await controller.close(); };
+
+    final membersSubscription = _flocks.doc(flockId).collection('members').snapshots().listen(
+      (snap) {
+        members = snap.docs
+            .map((d) => FlockMembership.fromFirestore(flockId, d.data(), uid: d.id))
+            .toList();
+        emit();
+      },
+      onError: (Object error, StackTrace stack) {
+        // Do not terminate the combined stream. The invitation source can
+        // still provide pending/declined members.
+        emit();
+      },
+    );
+
+    final invitationsSubscription = _flocks.doc(flockId).collection('invitations').snapshots().listen(
+      (snap) {
+        invites = snap.docs;
+        emit();
+      },
+      onError: (Object error, StackTrace stack) {
+        // Keep the member list usable if invitation reads fail temporarily.
+        emit();
+      },
+    );
+
+    // Emit an initial empty state immediately so the settings page does not
+    // remain stuck behind a Firestore listener handshake.
+    emit();
+
+    controller.onCancel = () async {
+      await membersSubscription.cancel();
+      await invitationsSubscription.cancel();
+      if (!controller.isClosed) await controller.close();
+    };
     return controller.stream;
   }
 
@@ -416,16 +525,45 @@ class FirebaseService {
     if (existing.exists && data?['status'] == 'declined' && data?['permanentlyReported'] == true) {
       throw StateError('This invitation was permanently reported by the member and cannot be resent.');
     }
+    final flockSnap = await _flocks.doc(flockId).get();
+    final flockData = flockSnap.data() ?? const <String, dynamic>{};
+    final flockName = flockData['name']?.toString().trim();
+    final flockState = flockData['state']?.toString().trim().toLowerCase() ?? 'running';
+
     await ref.set({
       'email': normalized,
       'status': 'pending',
+      'flockName': (flockName == null || flockName.isEmpty) ? 'Invited flock' : flockName,
+      'flockState': flockState,
       'createdByUid': _uid,
       'createdAt': FieldValue.serverTimestamp(),
       if (data?['declineCount'] is num) 'declineCount': (data!['declineCount'] as num).toInt(),
       'permanentlyReported': false,
+      'featureAccess': normalizeFeatureAccess(data?['featureAccess']),
       'resentAt': existing.exists ? FieldValue.serverTimestamp() : null,
       'resentByUid': existing.exists ? _uid : null,
     }, SetOptions(merge: true));
+    try {
+      final profiles = await _db.collectionGroup('profile').where('email', isEqualTo: normalized).limit(1).get();
+      if (profiles.docs.isNotEmpty) {
+        final uid = profiles.docs.first.reference.parent.parent?.id;
+        if (uid != null && uid.isNotEmpty) {
+          await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set({
+            'flockId': flockId,
+            'email': normalized,
+            'displayName': profiles.docs.first.data()['displayName']?.toString() ?? normalized,
+            'role': 'member',
+            'status': 'pending',
+            'flockName': (flockName == null || flockName.isEmpty) ? 'Invited flock' : flockName,
+            'flockState': flockState,
+            'featureAccess': normalizeFeatureAccess(data?['featureAccess']),
+            'invitationId': normalized,
+          }, SetOptions(merge: true));
+        }
+      }
+    } catch (_) {
+      // Invitation remains authoritative; membership provisioning is best-effort.
+    }
   }
 
   Future<void> resendInvitation(String flockId, String invitationId) async {
@@ -441,6 +579,21 @@ class FirebaseService {
       'resentAt': FieldValue.serverTimestamp(),
       'resentByUid': _uid,
     });
+    final acceptedUid = data['acceptedByUid']?.toString().trim() ?? '';
+    if (acceptedUid.isNotEmpty) {
+      await _db.collection('users').doc(acceptedUid).collection('flock_memberships').doc(flockId).set({'status': 'pending'}, SetOptions(merge: true));
+    } else {
+      try {
+        final email = data['email']?.toString().trim().toLowerCase() ?? '';
+        final profiles = await _db.collectionGroup('profile').where('email', isEqualTo: email).limit(1).get();
+        if (profiles.docs.isNotEmpty) {
+          final uid = profiles.docs.first.reference.parent.parent?.id;
+          if (uid != null && uid.isNotEmpty) {
+            await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set({'status': 'pending'}, SetOptions(merge: true));
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   Future<Map<String, dynamic>?> fetchNotificationSettings(String flockId) async {
@@ -495,28 +648,98 @@ class FirebaseService {
     }
   }
 
+  Future<bool> hasFlockFeatureAccess(String flockId, String feature) async {
+    if (await isAdmin()) return true;
+    final snap = await _flocks.doc(flockId).collection('members').doc(_uid).get();
+    if (!snap.exists) return false;
+    final data = snap.data() ?? const <String, dynamic>{};
+    if (data['status']?.toString().trim().toLowerCase() != 'active') return false;
+    return normalizeFeatureAccess(data['featureAccess'])[feature] == true;
+  }
+
+  Future<void> ensureFlockFeatureAccess(String flockId, String feature) async {
+    if (!await hasFlockFeatureAccess(flockId, feature)) {
+      throw StateError('You do not have access to this feature.');
+    }
+  }
+
+  Future<void> updateInvitationFeatureAccess(String flockId, String email, Map<String, bool> access) async {
+    if (!await isAdmin()) throw StateError('Only an admin can manage member feature access.');
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty) throw StateError('Invitation email is missing.');
+    final ref = _flocks.doc(flockId).collection('invitations').doc(normalizedEmail);
+    final snap = await ref.get();
+    if (!snap.exists) throw StateError('Invitation not found.');
+    final normalized = normalizeFeatureAccess(access);
+    await ref.set({'featureAccess': normalized}, SetOptions(merge: true));
+    final acceptedUid = snap.data()?['acceptedByUid']?.toString().trim() ?? '';
+    if (acceptedUid.isNotEmpty) {
+      await _db.collection('users').doc(acceptedUid).collection('flock_memberships').doc(flockId).set({'featureAccess': normalized}, SetOptions(merge: true));
+    } else {
+      try {
+        final profiles = await _db.collectionGroup('profile').where('email', isEqualTo: normalizedEmail).limit(1).get();
+        if (profiles.docs.isNotEmpty) {
+          final uid = profiles.docs.first.reference.parent.parent?.id;
+          if (uid != null && uid.isNotEmpty) {
+            await _db.collection('users').doc(uid).collection('flock_memberships').doc(flockId).set({'featureAccess': normalized}, SetOptions(merge: true));
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
   Future<List<Map<String, dynamic>>> pendingInvitationsForEmail(String email) async {
     final normalized = email.trim().toLowerCase();
     if (normalized.isEmpty) return const [];
-    final snap = await _db.collectionGroup('invitations')
-        .where('email', isEqualTo: normalized)
-        .where('status', isEqualTo: 'pending')
-        .get();
-    final result = <Map<String, dynamic>>[];
-    for (final doc in snap.docs) {
-      final flockRef = doc.reference.parent.parent;
-      if (flockRef == null) continue;
-      final flock = await flockRef.get();
-      final flockData = flock.data();
-      if (!flock.exists || flockData == null || flockData['state'] == 'ended') continue;
-      result.add({
-        'invitationId': doc.id,
-        'flockId': flockRef.id,
-        'flockName': flockData['name']?.toString() ?? 'Invited flock',
-        ...doc.data(),
-      });
+
+    final result = <String, Map<String, dynamic>>{};
+
+    // Preferred path: the user's own pending membership is readable even before
+    // the invitation is accepted, so the dashboard does not depend on a
+    // collection-group query or parent-flock permissions.
+    try {
+      final memberships = await _memberships.where('status', isEqualTo: 'pending').get().timeout(const Duration(seconds: 8));
+      for (final doc in memberships.docs) {
+        final data = Map<String, dynamic>.from(doc.data());
+        if ((data['email']?.toString().trim().toLowerCase() ?? normalized) != normalized) continue;
+        if (data['flockState']?.toString().trim().toLowerCase() == 'ended') continue;
+        result[doc.id] = {
+          'invitationId': data['invitationId']?.toString() ?? normalized,
+          'flockId': doc.id,
+          'flockName': data['flockName']?.toString().trim().isNotEmpty == true ? data['flockName'].toString() : 'Invited flock',
+          ...data,
+        };
+      }
+    } catch (_) {}
+
+    // Backward-compatible fallback for invitations created before pending
+    // membership provisioning was added. Try both the signed-in email and the
+    // normalized form because older invitation records may have preserved the
+    // email casing supplied by the admin.
+    final emailCandidates = <String>{email.trim(), normalized}.where((e) => e.isNotEmpty).toList();
+    for (final candidate in emailCandidates) {
+      try {
+        final snap = await _db.collectionGroup('invitations')
+            .where('email', isEqualTo: candidate)
+            .where('status', isEqualTo: 'pending')
+            .get()
+            .timeout(const Duration(seconds: 8));
+        for (final doc in snap.docs) {
+          final flockRef = doc.reference.parent.parent;
+          if (flockRef == null) continue;
+          final data = Map<String, dynamic>.from(doc.data());
+          if (data['flockState']?.toString().trim().toLowerCase() == 'ended') continue;
+          result[flockRef.id] = {
+            'invitationId': doc.id,
+            'flockId': flockRef.id,
+            'flockName': data['flockName']?.toString().trim().isNotEmpty == true ? data['flockName'].toString() : 'Invited flock',
+            ...data,
+          };
+        }
+      } catch (_) {}
     }
-    return result;
+
+    return result.values.toList();
   }
 
   Future<Map<String, dynamic>?> pendingInvitationForEmail(String email) async {
@@ -534,8 +757,9 @@ class FirebaseService {
     if (!snap.exists || snap.data()?['email']?.toString().toLowerCase() != email || snap.data()?['status'] != 'pending') {
       throw StateError('Invitation is no longer available.');
     }
-    final flockSnap = await _flocks.doc(flockId).get();
-    if (!flockSnap.exists || flockSnap.data()?['state'] == 'ended') throw StateError('This flock is no longer running.');
+    if (snap.data()?['flockState']?.toString() == 'ended') {
+      throw StateError('This flock is no longer running.');
+    }
     final membership = {
       'role': snap.data()?['role']?.toString() == 'admin' ? 'admin' : 'member',
       'status': 'active',
@@ -543,6 +767,7 @@ class FirebaseService {
       'displayName': user.displayName ?? email,
       'mobileNumber': '',
       'notificationLanguage': 'en',
+      'featureAccess': normalizeFeatureAccess(snap.data()?['featureAccess']),
       'joinedAt': FieldValue.serverTimestamp(),
     };
     await _flocks.doc(flockId).collection('members').doc(_uid).set(membership, SetOptions(merge: true));
@@ -597,6 +822,7 @@ class FirebaseService {
       'declinedAt': FieldValue.serverTimestamp(),
       if (permanentlyReported) 'reportedAt': FieldValue.serverTimestamp(),
     });
+    await _memberships.doc(flockId).set({'status': 'declined'}, SetOptions(merge: true));
   }
 
   Future<void> removeMember(String flockId, String memberUid) async {
@@ -604,23 +830,6 @@ class FirebaseService {
     if (memberUid == _uid) throw StateError('The flock admin cannot remove themselves.');
     await _flocks.doc(flockId).collection('members').doc(memberUid).delete();
     await _db.collection('users').doc(memberUid).collection('flock_memberships').doc(flockId).delete();
-  }
-
-  Future<void> _claimPendingInvitations() async {
-    final email = currentUser?.email?.trim().toLowerCase();
-    if (email == null || email.isEmpty) return;
-    final groups = await _db.collectionGroup('invitations').where('email', isEqualTo: email).where('status', isEqualTo: 'pending').get();
-    for (final invite in groups.docs) {
-      final flockRef = invite.reference.parent.parent;
-      if (flockRef == null) continue;
-      final flock = await flockRef.get();
-      if (!flock.exists) continue;
-      final user = currentUser;
-      final membership = {'role': 'member', 'status': 'active', 'email': email, 'displayName': user?.displayName ?? email, 'mobileNumber':'', 'notificationLanguage':'en'};
-      await flockRef.collection('members').doc(_uid).set(membership);
-      await _memberships.doc(flockRef.id).set(membership);
-      await invite.reference.update({'status': 'accepted', 'acceptedByUid': _uid, 'acceptedAt': FieldValue.serverTimestamp()});
-    }
   }
 
   Future<void> setAdminRole(String userId, bool admin) async {
@@ -836,6 +1045,7 @@ class FirebaseService {
 
   Future<List<ExpenseSalesLog>> fetchExpenseRecords() async {
     await _ensureActiveFlock();
+    await ensureFlockFeatureAccess(_flockId, 'expenses');
     final snapshot = await _expenses.orderBy('dateKey', descending: true).get();
     return snapshot.docs
         .map((d) => ExpenseSalesLog.fromFirestore(d.data(), id: d.id))
@@ -858,6 +1068,7 @@ class FirebaseService {
     if (!await isAdmin() && !await isFlockMember(flockId)) {
       throw StateError('You do not have access to this flock.');
     }
+    if (!await isAdmin()) await ensureFlockFeatureAccess(flockId, 'expenses');
     Query<Map<String, dynamic>> query =
         _flocks.doc(flockId).collection('expense_records').orderBy('dateKey', descending: true);
     final start = startDate == null ? null : DateTime(startDate.year, startDate.month, startDate.day);
@@ -885,27 +1096,6 @@ class FirebaseService {
   }
 
   String _dateKey(DateTime date) => PoultryCalculationService.dateKey(date);
-
-  Future<PoultryLog?> _findPreviousLog(DateTime date) async {
-    final key = _dateKey(date);
-    final snapshot = await _daily
-        .where('dateKey', isLessThan: key)
-        .orderBy('dateKey', descending: true)
-        .limit(1)
-        .get();
-    if (snapshot.docs.isEmpty) return null;
-    return PoultryLog.fromFirestore(snapshot.docs.first.data());
-  }
-
-  Future<List<PoultryLog>> _findFutureLogs(String insertedKey) async {
-    final snapshot = await _daily
-        .where('dateKey', isGreaterThan: insertedKey)
-        .orderBy('dateKey')
-        .get();
-    return snapshot.docs
-        .map((d) => PoultryLog.fromFirestore(d.data()))
-        .toList();
-  }
 
   Future<void> _ensureFarmBootstrapConfig(List<PoultryLog> logs) async {
     final config = await _farmConfig.get();
@@ -1390,6 +1580,8 @@ class FirebaseService {
   }
 
   Future<void> updateExpenseRecord(ExpenseSalesLog record) async {
+    await _ensureActiveFlock();
+    await ensureFlockFeatureAccess(_flockId, 'expenses');
     if (record.id == null || record.id!.trim().isEmpty) {
       throw StateError('Expense record ID is missing.');
     }
@@ -1416,6 +1608,8 @@ class FirebaseService {
   }
 
   Future<void> addExpenseRecord(ExpenseSalesLog record) async {
+    await _ensureActiveFlock();
+    await ensureFlockFeatureAccess(_flockId, 'expenses');
     if (record.amount < 0 || record.quantity < 0) {
       throw StateError('Amount and quantity cannot be negative.');
     }
@@ -1440,4 +1634,148 @@ class FirebaseService {
     }..removeWhere((key, value) => value == null));
     await _expenses.doc(key).set(data);
   }
+
+  static dynamic _backupEncode(dynamic value) {
+    if (value is Timestamp) {
+      return {'__type': 'timestamp', 'milliseconds': value.millisecondsSinceEpoch};
+    }
+    if (value is GeoPoint) {
+      return {'__type': 'geopoint', 'latitude': value.latitude, 'longitude': value.longitude};
+    }
+    if (value is DocumentReference) {
+      return {'__type': 'document_reference', 'path': value.path};
+    }
+    if (value is Map) {
+      return value.map((key, item) => MapEntry(key.toString(), _backupEncode(item)));
+    }
+    if (value is Iterable) return value.map(_backupEncode).toList();
+    return value;
+  }
+
+  static dynamic _backupDecode(dynamic value) {
+    if (value is Map) {
+      final type = value['__type']?.toString();
+      if (type == 'timestamp') {
+        return Timestamp.fromMillisecondsSinceEpoch((value['milliseconds'] as num).toInt());
+      }
+      if (type == 'geopoint') {
+        return GeoPoint((value['latitude'] as num).toDouble(), (value['longitude'] as num).toDouble());
+      }
+      if (type == 'document_reference') return FirebaseFirestore.instance.doc(value['path'].toString());
+      return value.map((key, item) => MapEntry(key.toString(), _backupDecode(item)));
+    }
+    if (value is List) return value.map(_backupDecode).toList();
+    return value;
+  }
+
+  Future<Map<String, dynamic>> exportFlockBackup(String flockId) async {
+    if (!await isAdmin()) throw StateError('Only an administrator can export flock data.');
+    final id = flockId.trim();
+    if (id.isEmpty) throw StateError('Flock ID cannot be empty.');
+
+    final flockRef = _flocks.doc(id);
+    final flockSnap = await flockRef.get();
+    if (!flockSnap.exists) throw StateError('Flock was not found.');
+
+    const subcollections = <String>[
+      'daily_logs',
+      'expense_records',
+      'members',
+      'invitations',
+      'notification_settings',
+      'notification_templates',
+    ];
+
+    final snapshots = await Future.wait(
+      subcollections.map((name) => flockRef.collection(name).get()),
+    );
+
+    final collections = <String, dynamic>{};
+    for (var i = 0; i < subcollections.length; i++) {
+      collections[subcollections[i]] = snapshots[i].docs
+          .map((doc) => {'id': doc.id, 'data': _backupEncode(doc.data())})
+          .toList();
+    }
+
+    return <String, dynamic>{
+      'format': 'poultry_inventory_flock_backup',
+      'schemaVersion': 1,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'flock': {'id': flockSnap.id, 'data': _backupEncode(flockSnap.data() ?? <String, dynamic>{})},
+      'collections': collections,
+    };
+  }
+
+  Future<int> importFlockBackup(Map<String, dynamic> backup, {void Function(String message)? onProgress}) async {
+    if (!await isAdmin()) throw StateError('Only an administrator can import flock backups.');
+    if (backup['format'] != 'poultry_inventory_flock_backup') {
+      throw StateError('Unsupported backup file. Select a Poultry Inventory flock backup.');
+    }
+    if ((backup['schemaVersion'] as num?)?.toInt() != 1) {
+      throw StateError('Unsupported backup version.');
+    }
+
+    final flockEntry = backup['flock'];
+    if (flockEntry is! Map) throw StateError('Backup is missing flock information.');
+    final flockId = flockEntry['id']?.toString().trim() ?? '';
+    final flockDataRaw = flockEntry['data'];
+    if (flockId.isEmpty || flockDataRaw is! Map) throw StateError('Backup contains invalid flock information.');
+    final flockData = Map<String, dynamic>.from(_backupDecode(flockDataRaw) as Map);
+
+    final existing = await _flocks.doc(flockId).get();
+    if (!existing.exists && (flockData['endDate'] == null)) {
+      final running = await _flocks.get();
+      final runningCount = running.docs.where((doc) {
+        final endDate = doc.data()['endDate'];
+        return endDate == null;
+      }).length;
+      if (runningCount >= 3) {
+        throw StateError('Import would exceed the maximum of 3 running flocks. End a running flock first.');
+      }
+    }
+
+    onProgress?.call(existing.exists ? 'Updating flock…' : 'Restoring flock…');
+    await _flocks.doc(flockId).set(flockData, SetOptions(merge: true));
+
+    final collections = backup['collections'];
+    if (collections is! Map) return 1;
+
+    var written = 1;
+    for (final entry in collections.entries) {
+      final collectionName = entry.key.toString();
+      final rows = entry.value;
+      if (rows is! List || rows.isEmpty) continue;
+      onProgress?.call('Restoring $collectionName…');
+      for (var start = 0; start < rows.length; start += 400) {
+        final batch = _db.batch();
+        final end = (start + 400 < rows.length) ? start + 400 : rows.length;
+        for (final rawRow in rows.sublist(start, end)) {
+          if (rawRow is! Map) continue;
+          final docId = rawRow['id']?.toString().trim() ?? '';
+          final rawData = rawRow['data'];
+          if (docId.isEmpty || rawData is! Map) continue;
+          final data = Map<String, dynamic>.from(_backupDecode(rawData) as Map);
+          batch.set(flockRefForBackup(flockId, collectionName, docId), data, SetOptions(merge: true));
+          written++;
+        }
+        await batch.commit();
+      }
+    }
+    onProgress?.call('Backup import finished.');
+    return written;
+  }
+
+  DocumentReference<Map<String, dynamic>> flockRefForBackup(String flockId, String collectionName, String docId) {
+    const allowed = <String>{
+      'daily_logs',
+      'expense_records',
+      'members',
+      'invitations',
+      'notification_settings',
+      'notification_templates',
+    };
+    if (!allowed.contains(collectionName)) throw StateError('Unsupported backup collection: $collectionName');
+    return _flocks.doc(flockId).collection(collectionName).doc(docId);
+  }
+
 }

@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/expense_sales_log.dart';
 import '../providers/poultry_provider.dart';
-import '../services/expense_category_config.dart';
 import '../widgets/app_shell.dart';
 import 'expense_sales_form_screen.dart';
 

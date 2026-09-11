@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../../core/services/supplier_share_service.dart';
 import '../../core/utils/vcard_generator.dart';
@@ -35,6 +34,7 @@ final class SupplierViewModel extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSaving = false;
   bool _isExporting = false;
+  bool _selectionMode = false;
   String? _error;
 
   List<Supplier> get suppliers => _suppliers;
@@ -44,6 +44,7 @@ final class SupplierViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   bool get isExporting => _isExporting;
+  bool get selectionMode => _selectionMode;
   String? get error => _error;
 
   List<String> get categories {
@@ -100,6 +101,27 @@ final class SupplierViewModel extends ChangeNotifier {
     if (value == _category) return;
     _category = value;
     _pruneSelection();
+    notifyListeners();
+  }
+
+  void enterSelectionMode() {
+    if (_selectionMode) return;
+    _selectionMode = true;
+    notifyListeners();
+  }
+
+  void exitSelectionMode() {
+    if (!_selectionMode && _selectedIds.isEmpty) return;
+    _selectionMode = false;
+    _selectedIds.clear();
+    notifyListeners();
+  }
+
+  void selectAllVisible() {
+    final visibleIds = filteredSuppliers.map((supplier) => supplier.id);
+    _selectedIds
+      ..clear()
+      ..addAll(visibleIds);
     notifyListeners();
   }
 

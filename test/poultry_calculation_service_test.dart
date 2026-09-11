@@ -107,7 +107,7 @@ void main() {
     test('has the expected default flock configuration', () {
       final config = FarmConfig.defaults;
 
-      expect(config.startingBirds, 5200);
+      expect(config.startingBirds, FarmConfig.defaultStartingBirds);
       expect(config.flockStartDate, DateTime(2026, 4, 26));
       expect(config.accounts, containsAll(<String>['Amzad Khan', 'Sarfaraj Khan']));
       expect(config.feedItems, containsAll(<String>['LCC (Starter)', 'LGC (Grower)', 'LCDP (Developer)', 'LCLP1 (Phase 1)', 'Finisher']));

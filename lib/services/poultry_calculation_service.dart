@@ -11,7 +11,7 @@ class PoultryCalculationService {
   static PoultryLog calculate({
     required PoultryLog input,
     int cumulativeMortalityBefore = 0,
-    int openingBirds = 5200,
+    int openingBirds = 0,
     DateTime? minimumDate,
   }) {
     _validateInputs(input, minimumDate: minimumDate);

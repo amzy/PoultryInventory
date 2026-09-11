@@ -11,6 +11,7 @@ service cloud.firestore {
     function flockMember(flockId, uid) { return /databases/$(database)/documents/flocks/$(flockId)/members/$(uid); }
     function isFlockMember(flockId) { return signedIn() && exists(flockMember(flockId, userId())) && get(flockMember(flockId, userId())).data.status == 'active'; }
     function isFlockAdmin(flockId) { return isFlockMember(flockId) && get(flockMember(flockId, userId())).data.role == 'admin'; }
+    function hasFlockFeature(flockId, feature) { return isFlockMember(flockId) && get(flockMember(flockId, userId())).data.featureAccess[feature] == true; }
 
     function dailyLogShape(data) {
       return data.keys().hasOnly([
@@ -62,6 +63,13 @@ service cloud.firestore {
       return data.mainCategory.size() > 0 && data.category.size() > 0 && expenseCategoryValid(data) && data.amount >= 0 && data.unitPrice >= 0 && data.freightCharge >= 0 && data.quantity >= 0
       && (!data.pricingCalculated || (data.category in ['Feed','Grit','Tray'] && data.amount >= data.quantity * data.unitPrice - 0.01 && data.amount <= data.quantity * data.unitPrice + 0.01))
       && data.mainCategory.size() <= 80 && data.category.size() <= 120 && data.originalCategory.size() <= 120 && data.account.size() <= 80 && data.description.size() <= 500 && data.unit.size() <= 30;
+    }
+
+    // Collection-group rule required for member dashboard invitation queries.
+    // A member may query invitation documents addressed to their own signed-in email
+    // without gaining access to invitations belonging to other users.
+    match /{path=**}/invitations/{inviteId} {
+      allow read: if signedIn() && resource.data.email == userEmail();
     }
 
     match /feed_catalog/{docId} {
@@ -127,7 +135,7 @@ service cloud.firestore {
 
       match /flock_memberships/{flockId} {
         allow read: if signedIn() && userId() == uid;
-        allow create, update: if signedIn() && ((userId() == uid && (isAdmin() || exists(/databases/$(database)/documents/flocks/$(flockId)/invitations/$(request.auth.token.email)))) || isFlockAdmin(flockId));
+        allow create, update: if signedIn() && (isAdmin() || isFlockAdmin(flockId) || (userId() == uid && exists(/databases/$(database)/documents/flocks/$(flockId)/invitations/$(request.auth.token.email))));
         allow delete: if signedIn() && (userId() == uid || isFlockAdmin(flockId));
       }
 
@@ -206,10 +214,10 @@ service cloud.firestore {
       }
 
       match /expense_records/{recordId} {
-        allow read: if isFlockMember(flockId) || isAdmin();
-        allow create: if (isFlockMember(flockId) || isAdmin()) && expenseShape(request.resource.data) && expenseValues(request.resource.data);
-        allow update: if (isFlockMember(flockId) || isAdmin()) && expenseShape(request.resource.data) && expenseValues(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
-        allow delete: if isFlockMember(flockId) || isAdmin();
+        allow read: if isAdmin() || hasFlockFeature(flockId, 'expenses');
+        allow create: if (isAdmin() || hasFlockFeature(flockId, 'expenses')) && expenseShape(request.resource.data) && expenseValues(request.resource.data);
+        allow update: if (isAdmin() || hasFlockFeature(flockId, 'expenses')) && expenseShape(request.resource.data) && expenseValues(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isAdmin() || hasFlockFeature(flockId, 'expenses');
       }
     }
   }

@@ -49,15 +49,27 @@ class PoultryAppShell extends StatelessWidget {
     this.headerOverride,
   });
 
+  List<int> _visibleIndices(PoultryProvider provider) {
+    if (provider.isAdmin) return List<int>.generate(poultryNavItems.length, (i) => i);
+    final result = <int>[0, 2];
+    const gated = <int, String>{1: 'reports', 3: 'medical', 4: 'feed', 5: 'grit', 6: 'tray', 7: 'otherExpenses', 8: 'eggSales', 9: 'suppliers'};
+    for (final entry in gated.entries) {
+      if (provider.hasFeature(entry.value)) result.add(entry.key);
+    }
+    return result..sort();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Consumer<PoultryProvider>(builder: (context, provider, _) {
+      final visibleIndices = _visibleIndices(provider);
+      return Scaffold(
       backgroundColor: const Color(0xFFF3F7F4),
-      drawer: _MobileDrawer(selectedIndex: selectedIndex, onNavigate: onNavigate),
+      drawer: _MobileDrawer(selectedIndex: selectedIndex, onNavigate: onNavigate, visibleIndices: visibleIndices),
       body: Row(
         children: [
           if (MediaQuery.sizeOf(context).width >= 900)
-            _DesktopSidebar(selectedIndex: selectedIndex, onNavigate: onNavigate),
+            _DesktopSidebar(selectedIndex: selectedIndex, onNavigate: onNavigate, visibleIndices: visibleIndices),
           Expanded(
             child: Column(
               children: [
@@ -83,14 +95,16 @@ class PoultryAppShell extends StatelessWidget {
           ),
         ],
       ),
-    );
+      );
+    });
   }
 }
 
 class _DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
   final void Function(int)? onNavigate;
-  const _DesktopSidebar({required this.selectedIndex, required this.onNavigate});
+  final List<int> visibleIndices;
+  const _DesktopSidebar({required this.selectedIndex, required this.onNavigate, required this.visibleIndices});
 
   @override
   Widget build(BuildContext context) {
@@ -122,10 +136,11 @@ class _DesktopSidebar extends StatelessWidget {
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                itemCount: poultryNavItems.length,
+                itemCount: visibleIndices.length,
                 itemBuilder: (context, index) {
-                  final item = poultryNavItems[index];
-                  return _NavTile(item: item, selected: index == selectedIndex, compact: true, onTap: onNavigate == null ? null : () => onNavigate!(index));
+                  final itemIndex = visibleIndices[index];
+                  final item = poultryNavItems[itemIndex];
+                  return _NavTile(item: item, selected: itemIndex == selectedIndex, compact: true, onTap: onNavigate == null ? null : () => onNavigate!(itemIndex));
                 },
               ),
             ),
@@ -142,7 +157,8 @@ class _DesktopSidebar extends StatelessWidget {
 class _MobileDrawer extends StatelessWidget {
   final int selectedIndex;
   final void Function(int)? onNavigate;
-  const _MobileDrawer({required this.selectedIndex, required this.onNavigate});
+  final List<int> visibleIndices;
+  const _MobileDrawer({required this.selectedIndex, required this.onNavigate, required this.visibleIndices});
 
   @override
   Widget build(BuildContext context) {
@@ -159,10 +175,11 @@ class _MobileDrawer extends StatelessWidget {
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                itemCount: poultryNavItems.length,
+                itemCount: visibleIndices.length,
                 itemBuilder: (context, index) {
-                  final item = poultryNavItems[index];
-                  return _NavTile(item: item, selected: index == selectedIndex, onTap: onNavigate == null ? null : () { Navigator.pop(context); onNavigate!(index); });
+                  final itemIndex = visibleIndices[index];
+                  final item = poultryNavItems[itemIndex];
+                  return _NavTile(item: item, selected: itemIndex == selectedIndex, onTap: onNavigate == null ? null : () { Navigator.pop(context); onNavigate!(itemIndex); });
                 },
               ),
             ),

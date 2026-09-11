@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FarmConfig {
   static final DateTime defaultFlockStartDate = DateTime(2026, 4, 26);
-  static const int defaultStartingBirds = 5200;
+  static const int defaultStartingBirds = 0;
   static const String defaultBreedName = '';
   static const List<String> defaultAccounts = ['Amzad Khan', 'Sarfaraj Khan'];
   static const List<String> defaultFeedItems = [

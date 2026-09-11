@@ -153,6 +153,19 @@ class _SearchAndActions extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
+        OutlinedButton.icon(
+          onPressed: viewModel.isExporting
+              ? null
+              : () {
+                  if (viewModel.selectionMode) {
+                    viewModel.exitSelectionMode();
+                  } else {
+                    viewModel.enterSelectionMode();
+                  }
+                },
+          icon: Icon(viewModel.selectionMode ? Icons.close : Icons.checklist_outlined),
+          label: Text(viewModel.selectionMode ? 'Done' : 'Select'),
+        ),
         if (isAdmin)
           FilledButton.icon(
             onPressed: viewModel.isSaving ? null : () => _showSupplierEditor(context, viewModel),
@@ -182,9 +195,17 @@ class _ExportPanel extends StatelessWidget {
         runSpacing: 8,
         children: [
           Text(
-            selected.isEmpty ? 'Export supplier contacts' : '${selected.length} selected',
+            viewModel.selectionMode
+                ? (selected.isEmpty ? 'Select supplier contacts' : '${selected.length} selected')
+                : 'Export supplier contacts',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
+          if (viewModel.selectionMode)
+            TextButton.icon(
+              onPressed: visible.isEmpty ? null : viewModel.selectAllVisible,
+              icon: const Icon(Icons.done_all, size: 18),
+              label: const Text('Select all'),
+            ),
           SizedBox(
             width: 210,
             child: DropdownButtonFormField<String?>(
@@ -289,10 +310,11 @@ class _SupplierCard extends StatelessWidget {
         leading: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Checkbox(
-              value: selected,
-              onChanged: (_) => viewModel.toggleSelection(supplier.id),
-            ),
+            if (viewModel.selectionMode)
+              Checkbox(
+                value: selected,
+                onChanged: (_) => viewModel.toggleSelection(supplier.id),
+              ),
             CircleAvatar(
               radius: 25,
               backgroundColor: const Color(0xFFE6F5ED),
