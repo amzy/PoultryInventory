@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/firebase_service.dart';
+import 'legal_documents_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -509,6 +510,34 @@ class _LoginScreenState extends State<LoginScreen> {
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: _textMuted, fontSize: 13),
                                 ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              TextButton(
+                                onPressed: _loading
+                                    ? null
+                                    : () => Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => const PrivacyPolicyScreen(),
+                                          ),
+                                        ),
+                                child: const Text('Privacy Policy'),
+                              ),
+                              const Text('•', style: TextStyle(color: _textMuted)),
+                              TextButton(
+                                onPressed: _loading
+                                    ? null
+                                    : () => Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => const TermsAndConditionsScreen(),
+                                          ),
+                                        ),
+                                child: const Text('Terms & Conditions'),
                               ),
                             ],
                           ),

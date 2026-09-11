@@ -36,3 +36,13 @@ For local development on port 8080, use:
 The Web OAuth client ID configured in `web/index.html` is:
 
 `395473159192-7i9le93o7tt2nsva4bq8dasf67i9bnrj.apps.googleusercontent.com`
+
+## Public legal pages
+
+The Flutter Web app exposes public legal pages without requiring Firebase login:
+
+- Privacy Policy: `https://amzy.github.io/PoultryInventory/#/privacy-policy`
+- Terms & Conditions: `https://amzy.github.io/PoultryInventory/#/terms-and-conditions`
+
+These routes are implemented inside the Flutter application and are linked from the login screen.
+

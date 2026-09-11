@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'providers/poultry_provider.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/legal_documents_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'services/notification_service.dart';
 
@@ -56,6 +57,25 @@ class PoultryInventoryApp extends StatelessWidget {
           ),
         ),
         home: const AuthGate(),
+        onGenerateRoute: (settings) {
+          switch (settings.name) {
+            case '/privacy-policy':
+              return MaterialPageRoute(
+                builder: (_) => const PrivacyPolicyScreen(),
+                settings: settings,
+              );
+            case '/terms-and-conditions':
+              return MaterialPageRoute(
+                builder: (_) => const TermsAndConditionsScreen(),
+                settings: settings,
+              );
+            default:
+              return MaterialPageRoute(
+                builder: (_) => const AuthGate(),
+                settings: settings,
+              );
+          }
+        },
       ),
     );
   }
