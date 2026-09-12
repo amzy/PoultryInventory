@@ -1,20 +1,100 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <!-- Production domain: https://ovaloasis.in/ -->
-  <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Poultry Inventory">
-  <!-- Google Identity Services Web OAuth client. The Authorized JavaScript origins
-       must be configured in Google Cloud for the exact browser origin. -->
-  <meta name="google-signin-client_id" content="395473159192-7i9le93o7tt2nsva4bq8dasf67i9bnrj.apps.googleusercontent.com">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="OvalOasis Poultry Inventory is a poultry flock and inventory management application for recording daily production, feed, water, grit, suppliers, flock performance, and reports.">
+  <meta name="robots" content="index, follow">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-  <title>Poultry Inventory</title>
+  <title>OvalOasis Poultry Inventory</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #12343b; background: #f6fbfc; }
+    .page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px 18px; }
+    .card { width: min(920px, 100%); background: #fff; border: 1px solid #d7e9ec; border-radius: 24px; padding: 42px; box-shadow: 0 14px 45px rgba(17, 66, 74, .10); }
+    .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+    .brand-mark { width: 52px; height: 52px; border-radius: 14px; background: #0ea5a8; display: grid; place-items: center; color: white; font-size: 25px; font-weight: 800; }
+    h1 { margin: 0; font-size: clamp(30px, 5vw, 46px); line-height: 1.1; }
+    h2 { margin-top: 30px; }
+    p, li { font-size: 16px; line-height: 1.7; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0; }
+    .button { display: inline-block; text-decoration: none; border-radius: 12px; padding: 13px 20px; font-weight: 700; border: 1px solid #0e8f92; color: #0b6f72; background: #fff; cursor: pointer; }
+    .button.primary { color: #fff; background: #0e9fa2; }
+    .links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 28px; }
+    .links a { color: #087b80; font-weight: 600; }
+    .note { padding: 14px 16px; border-radius: 12px; background: #eef9fa; margin-top: 22px; }
+    footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e4eff0; color: #587278; font-size: 14px; }
+    #flutter-loading { display: none; min-height: 100vh; align-items: center; justify-content: center; }
+    @media (max-width: 600px) { .card { padding: 26px 20px; border-radius: 18px; } }
+  </style>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <main id="public-home" class="page">
+    <section class="card" aria-labelledby="title">
+      <div class="brand">
+        <div class="brand-mark">O</div>
+        <div>
+          <div style="font-weight:700; color:#087b80;">OvalOasis</div>
+          <div style="font-size:13px; color:#6b8186;">Poultry Inventory</div>
+        </div>
+      </div>
+
+      <h1 id="title">Poultry Inventory Management</h1>
+      <p>
+        OvalOasis Poultry Inventory helps poultry farm teams manage flock information,
+        daily production records, feed, water, grit, suppliers, flock performance,
+        standards, and operational reports in one place.
+      </p>
+
+      <h2>What you can do</h2>
+      <ul>
+        <li>Maintain flock and supplier information.</li>
+        <li>Record and review daily poultry production and inventory data.</li>
+        <li>Track feed, water, grit, eggs, laying performance, and flock age.</li>
+        <li>Compare flock performance with BV300 lifecycle benchmarks.</li>
+        <li>View reports and manage application data.</li>
+      </ul>
+
+      <div class="actions">
+        <button class="button primary" type="button" onclick="openApp()">Open Poultry Inventory</button>
+        <a class="button" href="/privacy-policy.html">Privacy Policy</a>
+        <a class="button" href="/terms-and-conditions.html">Terms &amp; Conditions</a>
+      </div>
+
+      <div class="note">
+        <strong>Account access:</strong> The management application requires an account.
+        This public homepage is available without signing in so visitors can understand the
+        application and its data practices before using it.
+      </div>
+
+      <div class="links">
+        <a href="mailto:amzy21@gmail.com">Contact support</a>
+        <a href="/privacy-policy.html">Privacy</a>
+        <a href="/terms-and-conditions.html">Terms</a>
+      </div>
+
+      <footer>
+        © 2026 OvalOasis. Poultry Inventory.
+      </footer>
+    </section>
+  </main>
+
+  <div id="flutter-loading" aria-live="polite">Loading Poultry Inventory…</div>
+
+  <script>
+    function openApp() {
+      document.getElementById('public-home').style.display = 'none';
+      document.getElementById('flutter-loading').style.display = 'flex';
+      var script = document.createElement('script');
+      script.src = 'flutter_bootstrap.js';
+      script.async = true;
+      script.onload = function () {
+        document.getElementById('flutter-loading').style.display = 'none';
+      };
+      document.body.appendChild(script);
+    }
+  </script>
 </body>
 </html>
