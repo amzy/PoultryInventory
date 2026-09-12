@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:file_picker/file_picker.dart';
@@ -22,6 +23,7 @@ import '../services/poultry_standard_prompt.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 import 'admin_panel_screen.dart';
+import 'profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool embedded;
@@ -612,20 +614,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final content = const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('Settings and administration are managed by the flock administrator.'),
+          child: Text('Administration is managed by the flock administrator.'),
         ),
       );
       if (widget.embedded) return content;
       return PoultryAppShell(
         selectedIndex: 10,
-        title: 'Settings',
+        title: 'Admin',
         subtitle: 'App preferences',
         child: content,
       );
     }
 
     final panels = <Widget>[
-      _flockConfigurationPanel(),
       _flockPerformanceMetricsPanel(),
       _accountsPanel(),
       _feedCatalogPanel(),
@@ -645,8 +646,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
             children: [
-              _settingsHero(),
+              _adminProfileCard(context),
               const SizedBox(height: 12),
+              _settingsHero(),
+              const SizedBox(height: 14),
+              const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('ADMIN MENU', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: Color(0xFF7A8B83)))),
+              const SizedBox(height: 8),
               _settingsCategoryList(compact: true),
               const SizedBox(height: 14),
               body,
@@ -659,6 +664,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _adminProfileCard(context),
+              const SizedBox(height: 14),
               _settingsHero(),
               const SizedBox(height: 14),
               Expanded(
@@ -680,9 +687,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (widget.embedded) return content;
     return PoultryAppShell(
       selectedIndex: 10,
-      title: 'Settings',
+      title: 'Admin',
       subtitle: 'Farm preferences and administration',
       child: content,
+    );
+  }
+
+  Widget _adminProfileCard(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final name = (user?.displayName?.trim().isNotEmpty == true) ? user!.displayName!.trim() : 'User';
+    final email = user?.email?.trim() ?? '';
+    final photoUrl = user?.photoURL;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            ClipOval(
+              child: SizedBox(
+                width: 54, height: 54,
+                child: photoUrl == null || photoUrl.isEmpty
+                    ? Container(color: const Color(0xFFE7F6EE), child: const Icon(Icons.person, color: Color(0xFF0E9F6E), size: 28))
+                    : Image.network(photoUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE7F6EE), child: const Icon(Icons.person, color: Color(0xFF0E9F6E), size: 28))),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Profile', style: TextStyle(fontSize: 11, color: Color(0xFF718179), fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF162A21))),
+              if (email.isNotEmpty) Text(email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: Color(0xFF718179))),
+            ])),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF0E9F6E)),
+          ]),
+        ),
+      ),
     );
   }
 
@@ -713,9 +756,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Settings', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF162A21))),
+                  Text('Admin', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF162A21))),
                   SizedBox(height: 3),
-                  Text('Manage your farm, app preferences and administration', style: TextStyle(fontSize: 11, color: Color(0xFF60736A))),
+                  Text('Manage your farm, preferences and administration', style: TextStyle(fontSize: 11, color: Color(0xFF60736A))),
                 ],
               ),
             ),
@@ -726,7 +769,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _settingsCategoryList({bool compact = false}) {
     const items = <_SettingsCategory>[
-      _SettingsCategory('Flock Configuration', 'Flocks, members and invitations', Icons.home_work_outlined, Color(0xFF0E9F6E)),
       _SettingsCategory('Flock Performance', 'BV300 KPIs and PDF export', Icons.insights_outlined, Color(0xFF7C3AED)),
       _SettingsCategory('Accounts', 'Saved expense accounts', Icons.account_balance_wallet_outlined, Color(0xFF0891B2)),
       _SettingsCategory('Feed Catalog', 'Shared feed items', Icons.grass_outlined, Color(0xFFF59E0B)),

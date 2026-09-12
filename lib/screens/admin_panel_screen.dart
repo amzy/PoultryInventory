@@ -34,6 +34,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   final _supplierName = TextEditingController();
   final _supplierAddress = TextEditingController();
   final _supplierContact = TextEditingController();
+  final List<TextEditingController> _supplierContacts = [];
   String _supplierCategory = '';
   String? _editingSupplierId;
   DateTime _start = DateTime.now();
@@ -66,7 +67,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     } catch (_) {}
     setState(() {});
   }
-  @override void dispose() { _name.dispose(); _birds.dispose(); _breed.dispose(); _email.dispose(); _supplierName.dispose(); _supplierAddress.dispose(); _supplierContact.dispose(); for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); super.dispose(); }
+  @override void dispose() { _name.dispose(); _birds.dispose(); _breed.dispose(); _email.dispose(); _supplierName.dispose(); _supplierAddress.dispose(); _supplierContact.dispose(); for (final c in _supplierContacts) c.dispose(); for (final c in _accounts) c.dispose(); for (final c in _feeds) c.dispose(); super.dispose(); }
 
   Future<void> _save() async {
     final p = context.read<PoultryProvider>();
@@ -174,11 +175,42 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     'Suppliers',
     Icons.local_shipping_outlined,
     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Expanded(child: TextField(controller: _supplierName, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder()))),
-        const SizedBox(width: 8),
-        Expanded(child: TextField(controller: _supplierContact, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Contact Number', border: OutlineInputBorder()))),
-      ]),
+      TextField(controller: _supplierName, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder())),
+      const SizedBox(height: 8),
+      const Text('Mobile Numbers', style: TextStyle(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 6),
+      ..._supplierContacts.asMap().entries.map((entry) => Padding(
+        padding: const EdgeInsets.only(bottom: 7),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: entry.value,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: entry.key == 0 ? 'Primary mobile' : 'Mobile ${entry.key + 1}',
+                  prefixIcon: const Icon(Icons.phone_outlined),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            if (_supplierContacts.length > 1)
+              IconButton(
+                tooltip: 'Remove mobile number',
+                onPressed: () => setState(() {
+                  final c = _supplierContacts.removeAt(entry.key);
+                  c.dispose();
+                }),
+                icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+              ),
+          ],
+        ),
+      )),
+      OutlinedButton.icon(
+        onPressed: () => setState(() => _supplierContacts.add(TextEditingController())),
+        icon: const Icon(Icons.add),
+        label: const Text('Add another mobile'),
+      ),
       const SizedBox(height: 8),
       TextField(controller: _supplierAddress, maxLines: 2, decoration: const InputDecoration(labelText: 'Business Address', border: OutlineInputBorder())),
       const SizedBox(height: 8),
@@ -219,11 +251,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<void> _saveSupplier(PoultryProvider p) async {
     final name = _supplierName.text.trim();
     if (name.isEmpty) { _snack('Enter supplier full name.'); return; }
+    final phones = _supplierContacts
+        .map((c) => c.text.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList();
+    if (phones.isEmpty) { _snack('Add at least one mobile number.'); return; }
     final supplier = Supplier(
       id: _editingSupplierId ?? '',
       fullName: name,
       businessAddress: _supplierAddress.text.trim(),
-      contactNumber: _supplierContact.text.trim(),
+      contactNumber: phones.first,
+      contactNumbers: phones,
       category: _supplierCategory,
     );
     try {
@@ -245,7 +284,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _editingSupplierId = supplier.id;
       _supplierName.text = supplier.fullName;
       _supplierAddress.text = supplier.businessAddress;
-      _supplierContact.text = supplier.contactNumber; _supplierCategory = supplier.category;
+      for (final c in _supplierContacts) c.dispose();
+      _supplierContacts
+        ..clear()
+        ..addAll(supplier.phoneNumbers.map((value) => TextEditingController(text: value)));
+      if (_supplierContacts.isEmpty) _supplierContacts.add(TextEditingController());
+      _supplierContact.text = supplier.contactNumber;
+      _supplierCategory = supplier.category;
     });
   }
 
@@ -256,6 +301,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _supplierName.clear();
       _supplierAddress.clear();
       _supplierContact.clear();
+      for (final c in _supplierContacts) c.dispose();
+      _supplierContacts
+        ..clear()
+        ..add(TextEditingController());
       _supplierCategory = '';
     });
   }

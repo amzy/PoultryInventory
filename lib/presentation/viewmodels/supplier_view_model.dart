@@ -14,16 +14,18 @@ import '../../services/vcard_file_saver.dart';
 /// Filtering/selection is kept in memory and is derived from one source list,
 /// so Firestore is not queried on every search/filter change.
 final class SupplierViewModel extends ChangeNotifier {
-  SupplierViewModel({required SupplierRepository repository})
+  SupplierViewModel({required SupplierRepository repository, Future<void> Function()? onSuppliersChanged})
       : _getSuppliers = GetSuppliers(repository),
         _addSupplier = AddSupplier(repository),
         _updateSupplier = UpdateSupplier(repository),
-        _deleteSupplier = DeleteSupplier(repository);
+        _deleteSupplier = DeleteSupplier(repository),
+        _onSuppliersChanged = onSuppliersChanged;
 
   final GetSuppliers _getSuppliers;
   final AddSupplier _addSupplier;
   final UpdateSupplier _updateSupplier;
   final DeleteSupplier _deleteSupplier;
+  final Future<void> Function()? _onSuppliersChanged;
   final VCardGenerator _vCardGenerator = const VCardGenerator();
   final SupplierShareService _shareService = const SupplierShareService();
 
@@ -140,6 +142,21 @@ final class SupplierViewModel extends ChangeNotifier {
     await _runSave(() async {
       final id = await _addSupplier(supplier);
       _suppliers = _sort([..._suppliers, supplier.copyWith(id: id)]);
+      await _onSuppliersChanged?.call();
+    });
+  }
+
+  Future<void> addMany(Iterable<Supplier> suppliers) async {
+    final list = suppliers.toList(growable: false);
+    if (list.isEmpty) return;
+    await _runSave(() async {
+      final added = <Supplier>[];
+      for (final supplier in list) {
+        final id = await _addSupplier(supplier);
+        added.add(supplier.copyWith(id: id));
+      }
+      _suppliers = _sort([..._suppliers, ...added]);
+      await _onSuppliersChanged?.call();
     });
   }
 
@@ -147,6 +164,7 @@ final class SupplierViewModel extends ChangeNotifier {
     await _runSave(() async {
       _suppliers = _sort(_suppliers.map((item) => item.id == supplier.id ? supplier : item).toList());
       await _updateSupplier(supplier);
+      await _onSuppliersChanged?.call();
     }, rollback: () async => load(force: true));
   }
 
@@ -155,6 +173,7 @@ final class SupplierViewModel extends ChangeNotifier {
       await _deleteSupplier(supplierId);
       _suppliers = _suppliers.where((item) => item.id != supplierId).toList(growable: false);
       _selectedIds.remove(supplierId);
+      await _onSuppliersChanged?.call();
     });
   }
 

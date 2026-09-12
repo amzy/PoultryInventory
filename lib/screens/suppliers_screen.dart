@@ -6,6 +6,7 @@ import '../models/supplier.dart';
 import '../presentation/viewmodels/supplier_view_model.dart';
 import '../providers/poultry_provider.dart';
 import '../services/expense_category_config.dart';
+import '../services/device_contact_picker.dart';
 import '../services/firebase_service.dart';
 import '../widgets/app_shell.dart';
 
@@ -22,17 +23,51 @@ class SuppliersScreen extends StatefulWidget {
 
 class _SuppliersScreenState extends State<SuppliersScreen> {
   late final SupplierViewModel _viewModel;
+  PoultryProvider? _poultryProvider;
 
   @override
   void initState() {
     super.initState();
+    _poultryProvider = context.read<PoultryProvider>();
+    _poultryProvider!.addListener(_handleProviderSupplierChange);
     _viewModel = SupplierViewModel(
       repository: FirebaseSupplierRepository(FirebaseService()),
+      onSuppliersChanged: () => _poultryProvider!.reloadSuppliers(),
     )..load();
+  }
+
+  void _handleProviderSupplierChange() {
+    if (!mounted) return;
+    final shared = _poultryProvider?.suppliers ?? const <Supplier>[];
+    final current = _viewModel.suppliers;
+    if (_sameSupplierLists(current, shared)) return;
+    // Settings/AdminPanel uses PoultryProvider as its source of truth.
+    // Reload this feature VM only when the supplier data actually changes.
+    _viewModel.load(force: true);
+  }
+
+  bool _sameSupplierLists(List<Supplier> a, List<Supplier> b) {
+    if (a.length != b.length) return false;
+    final left = [...a]..sort((x, y) => x.id.compareTo(y.id));
+    final right = [...b]..sort((x, y) => x.id.compareTo(y.id));
+    for (var i = 0; i < left.length; i++) {
+      final x = left[i];
+      final y = right[i];
+      if (x.id != y.id ||
+          x.fullName != y.fullName ||
+          x.businessAddress != y.businessAddress ||
+          x.category != y.category ||
+          x.contactNumber != y.contactNumber ||
+          x.phoneNumbers.join('|') != y.phoneNumbers.join('|')) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override
   void dispose() {
+    _poultryProvider?.removeListener(_handleProviderSupplierChange);
     _viewModel.dispose();
     super.dispose();
   }
@@ -166,12 +201,18 @@ class _SearchAndActions extends StatelessWidget {
           icon: Icon(viewModel.selectionMode ? Icons.close : Icons.checklist_outlined),
           label: Text(viewModel.selectionMode ? 'Done' : 'Select'),
         ),
-        if (isAdmin)
+        if (isAdmin) ...[
+          IconButton.filledTonal(
+            tooltip: 'Add from phone contacts',
+            onPressed: viewModel.isSaving ? null : () => _importDeviceContacts(context, viewModel),
+            icon: const Icon(Icons.contacts_outlined),
+          ),
           FilledButton.icon(
             onPressed: viewModel.isSaving ? null : () => _showSupplierEditor(context, viewModel),
             icon: const Icon(Icons.add),
             label: const Text('Add Supplier'),
           ),
+        ],
       ],
     );
   }
@@ -409,6 +450,187 @@ class _SupplierCard extends StatelessWidget {
 }
 
 enum ContactAction { call, sms, whatsapp }
+
+Future<void> _importDeviceContacts(
+  BuildContext context,
+  SupplierViewModel viewModel,
+) async {
+  try {
+    final contacts = await getDevicePhoneContacts();
+    if (!context.mounted) return;
+    if (contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No contacts with phone numbers were found.')),
+      );
+      return;
+    }
+
+    final selected = await showDialog<List<PickedPhoneContact>>(
+      context: context,
+      builder: (dialogContext) => _DeviceContactSelectionDialog(contacts: contacts),
+    );
+    if (selected == null || selected.isEmpty || !context.mounted) return;
+
+    final existingPhones = viewModel.suppliers
+        .expand((supplier) => supplier.phoneNumbers)
+        .map(_normalizePhone)
+        .where((value) => value.isNotEmpty)
+        .toSet();
+
+    final suppliers = <Supplier>[];
+    var skipped = 0;
+    for (final contact in selected) {
+      final phones = contact.phoneNumbers
+          .map((number) => number.trim())
+          .where((number) => number.isNotEmpty)
+          .where((number) => !existingPhones.contains(_normalizePhone(number)))
+          .toList(growable: false);
+      if (phones.isEmpty) {
+        skipped++;
+        continue;
+      }
+      final name = contact.name.trim().isEmpty ? 'Unnamed Contact' : contact.name.trim();
+      suppliers.add(
+        Supplier(
+          id: '',
+          fullName: name,
+          contactNumber: phones.first,
+          contactNumbers: phones,
+        ),
+      );
+      for (final phone in phones) {
+        existingPhones.add(_normalizePhone(phone));
+      }
+    }
+
+    if (suppliers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All selected contacts are already in the supplier list.')),
+      );
+      return;
+    }
+
+    await viewModel.addMany(suppliers);
+    if (!context.mounted) return;
+    final message = skipped == 0
+        ? '${suppliers.length} supplier contact${suppliers.length == 1 ? '' : 's'} added.'
+        : '${suppliers.length} added, $skipped already in the supplier list.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to import phone contacts: $e')),
+      );
+    }
+  }
+}
+
+String _normalizePhone(String value) => value.replaceAll(RegExp(r'[^0-9+]'), '');
+
+class _DeviceContactSelectionDialog extends StatefulWidget {
+  const _DeviceContactSelectionDialog({required this.contacts});
+
+  final List<PickedPhoneContact> contacts;
+
+  @override
+  State<_DeviceContactSelectionDialog> createState() => _DeviceContactSelectionDialogState();
+}
+
+class _DeviceContactSelectionDialogState extends State<_DeviceContactSelectionDialog> {
+  final Set<int> _selected = <int>{};
+  String _query = '';
+
+  List<int> get _visibleIndexes => List<int>.generate(widget.contacts.length, (index) => index)
+      .where((index) {
+        final contact = widget.contacts[index];
+        final query = _query.trim().toLowerCase();
+        if (query.isEmpty) return true;
+        return contact.name.toLowerCase().contains(query) ||
+            contact.phoneNumbers.any((phone) => phone.toLowerCase().contains(query));
+      })
+      .toList(growable: false);
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = _visibleIndexes;
+    return AlertDialog(
+      title: const Text('Add Phone Contacts'),
+      content: SizedBox(
+        width: 520,
+        height: 560,
+        child: Column(
+          children: [
+            TextField(
+              onChanged: (value) => setState(() => _query = value),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search device contacts',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('${_selected.length} selected', style: const TextStyle(fontWeight: FontWeight.w700)),
+                const Spacer(),
+                TextButton(
+                  onPressed: visible.isEmpty
+                      ? null
+                      : () => setState(() => _selected.addAll(visible)),
+                  child: const Text('Select visible'),
+                ),
+                TextButton(
+                  onPressed: _selected.isEmpty ? null : () => setState(_selected.clear),
+                  child: const Text('Clear'),
+                ),
+              ],
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                itemCount: visible.length,
+                itemBuilder: (context, row) {
+                  final index = visible[row];
+                  final contact = widget.contacts[index];
+                  return CheckboxListTile(
+                    value: _selected.contains(index),
+                    onChanged: (value) => setState(() {
+                      if (value == true) {
+                        _selected.add(index);
+                      } else {
+                        _selected.remove(index);
+                      }
+                    }),
+                    title: Text(
+                      contact.name.isEmpty ? 'Unnamed Contact' : contact.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(contact.phoneNumbers.join(' • ')),
+                    secondary: const CircleAvatar(child: Icon(Icons.person_outline)),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    _selected.map((index) => widget.contacts[index]).toList(growable: false),
+                  ),
+          child: Text('Add ${_selected.length}'),
+        ),
+      ],
+    );
+  }
+}
 
 Future<void> _showSupplierEditor(
   BuildContext context,

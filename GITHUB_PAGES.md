@@ -1,48 +1,53 @@
-# GitHub Pages deployment
+# Web deployment / custom domain
 
-This project is configured to build and deploy Flutter Web automatically with GitHub Actions.
+The Flutter Web application uses the custom production domain:
 
-## Production URL
+https://ovaloasis.in/
 
-https://amzy.github.io/PoultryInventory/
+## Flutter Web base path
 
-## How deployment works
+Because the application is hosted at the domain root, Flutter Web must be built with:
 
-Push the Flutter source to the `main` branch. The workflow in `.github/workflows/deploy-web.yml` will:
+```bash
+flutter build web --release --base-href /
+```
 
-1. Install Flutter on GitHub's runner.
-2. Run `flutter pub get`.
-3. Run `flutter build web --release --base-href /PoultryInventory/`.
-4. Publish `build/web` to GitHub Pages.
+Do **not** use `/PoultryInventory/` as the base href for the production site. Using the old GitHub Pages sub-path can break asset loading and client-side navigation on `ovaloasis.in`.
 
-You can also run the workflow manually from **GitHub → Actions → Build and Deploy Flutter Web → Run workflow**.
+## Custom domain
 
-## GitHub Pages setting
+The repository contains `web/CNAME` with:
 
-In the repository, open **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**.
+```text
+ovaloasis.in
+```
+
+When the web build is deployed, this file is copied into `build/web/CNAME` so GitHub Pages can retain the custom domain.
+
+In GitHub, configure:
+
+**Repository → Settings → Pages → Custom domain**
+
+Set it to:
+
+`ovaloasis.in`
+
+Then enable HTTPS after GitHub finishes verifying the DNS configuration.
+
+## DNS
+
+At the DNS provider for `ovaloasis.in`, configure the records required by GitHub Pages for the repository. Use GitHub's current Pages documentation as the authoritative source for the exact A/AAAA/CNAME records for the repository.
 
 ## Google OAuth
 
-The production browser origin is:
+The Google Sign-In Web OAuth client must allow the production browser origin:
 
-`https://amzy.github.io`
+`https://ovaloasis.in`
 
-Do not add `/PoultryInventory/` to the Google OAuth Authorized JavaScript origin. The path is handled by Flutter's base href.
+Do not add a path such as `/PoultryInventory/` to the authorized JavaScript origin.
 
-For local development on port 8080, use:
+Also ensure `ovaloasis.in` is present in Firebase Authentication → Settings → Authorized domains if Firebase Authentication is used on the web app.
 
-`http://localhost:8080`
+The existing Web OAuth client ID in `web/index.html` remains unchanged; changing the domain does not require changing the client ID, but its authorized origins must include the new domain.
 
-The Web OAuth client ID configured in `web/index.html` is:
-
-`395473159192-7i9le93o7tt2nsva4bq8dasf67i9bnrj.apps.googleusercontent.com`
-
-## Public legal pages
-
-The Flutter Web app exposes public legal pages without requiring Firebase login:
-
-- Privacy Policy: `https://amzy.github.io/PoultryInventory/#/privacy-policy`
-- Terms & Conditions: `https://amzy.github.io/PoultryInventory/#/terms-and-conditions`
-
-These routes are implemented inside the Flutter application and are linked from the login screen.
-
+For local development, continue using the local development origin configured for your Flutter web run command.

@@ -16,6 +16,7 @@ import 'settings_screen.dart';
 import 'reports_screen.dart';
 import 'suppliers_screen.dart';
 import 'profile_screen.dart';
+import 'standards_calendar_screen.dart';
 
 enum DashboardArtifactGroup {
   flockContext,
@@ -83,7 +84,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   void _navigate(int index) {
     final provider = context.read<PoultryProvider>();
-    if (!provider.isAdmin && index != 0 && index != 2 && index != 11) {
+    if (!provider.isAdmin && index != 0 && index != 2 && index != 11 && index != 12) {
       const gated = <int, String>{1: 'reports', 3: 'medical', 4: 'feed', 5: 'grit', 6: 'tray', 7: 'otherExpenses', 8: 'eggSales', 9: 'suppliers'};
       final feature = gated[index];
       if (feature != null && !provider.hasFeature(feature)) return;
@@ -166,6 +167,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       case 10:
         return const SettingsScreen(embedded: true, key: ValueKey('settings'));
       case 11:
+        return const StandardsCalendarScreen(embedded: true, key: ValueKey('standards-calendar'));
+      case 12:
         return ProfileScreen(embedded: true, onEmbeddedBack: _backToDashboard, key: const ValueKey('profile'));
       default:
         return _dashboardBody(provider);
@@ -222,8 +225,9 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     if (_selectedIndex == 1) return 'Reports';
     if (_selectedIndex == 2) return 'Add Daily Log';
     if (_selectedIndex == 9) return 'Suppliers';
-    if (_selectedIndex == 10) return 'Settings';
-    if (_selectedIndex == 11) return 'My Profile';
+    if (_selectedIndex == 10) return 'Admin';
+    if (_selectedIndex == 11) return 'Standards Calendar';
+    if (_selectedIndex == 12) return 'My Profile';
     return 'Add ${category == 'Egg Sales' ? 'Egg Sales' : 'Expense'}';
   }
 
@@ -235,7 +239,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     if (_selectedIndex == 2) return 'Track daily flock data';
     if (_selectedIndex == 9) return 'Supplier directory';
     if (_selectedIndex == 10) return 'App preferences, data tools and administration';
-    if (_selectedIndex == 11) return 'Personal account information';
+    if (_selectedIndex == 11) return 'BV300 daily benchmark schedule';
+    if (_selectedIndex == 12) return 'Personal account information';
     return 'Record farm financial activity';
   }
 
@@ -355,7 +360,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 const Text('No flock selected', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 5),
                 Text(
-                  provider.isAdmin ? 'Create a flock from Settings → Flock Configuration.' : 'Accept a flock invitation to start viewing flock data.',
+                  provider.isAdmin ? 'Create a flock from Admin → Flock Configuration.' : 'Accept a flock invitation to start viewing flock data.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 11, color: Color(0xFF71827A)),
                 ),
@@ -367,7 +372,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
 
     const groups = [
-      // Critical, cheap-to-render data stays first: flock + daily log metrics.
+      // Critical, cheap-to-render flock context and suggestions stay first.
       DashboardArtifactGroupConfig(DashboardArtifactGroup.flockContext),
       DashboardArtifactGroupConfig(DashboardArtifactGroup.overview),
       // Keep the dashboard intentionally lightweight: only the two requested
@@ -383,6 +388,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       final groupWidgets = switch (config.group) {
         DashboardArtifactGroup.flockContext => [
             if (provider.errorMessage != null) _error(provider.errorMessage!),
+            _performanceIndicators(provider),
+            _performanceSuggestions(provider),
           ],
         DashboardArtifactGroup.overview => [
             _metrics(provider, wide),
@@ -408,8 +415,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         // are intentionally not rendered on the dashboard.
         DashboardArtifactGroup.financial => const <Widget>[],
         DashboardArtifactGroup.activity => [
-            _performanceSuggestions(provider),
-            const SizedBox(height: 14),
             _recentLogs(provider),
             if (provider.hasFeature('expenses')) ...[
               const SizedBox(height: 14),
@@ -428,18 +433,25 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   Widget _metrics(PoultryProvider p, bool wide) {
     final items = [
-      ('Flock Age', '${FarmConfig.flockAgeOnDate(DateTime.now(), startDate: p.farmConfig.flockStartDate)} days', Icons.timelapse_outlined, const Color(0xFF7C3AED)),
-      ('Eggs', NumberFormat('#,##0').format(p.totalEggs), Icons.egg_alt_outlined, const Color(0xFFF59E0B)),
-      ('Feed', '${p.totalFeedKg.toStringAsFixed(0)} kg', Icons.inventory_2_outlined, const Color(0xFF15803D)),
-      ('Grit', _gritMetricValue(p), Icons.scatter_plot_outlined, const Color(0xFF9A6B22)),
-      ('Laying %', '${p.latestLayingPercentage.toStringAsFixed(1)}%', Icons.show_chart_outlined, const Color(0xFF0E9F6E)),
+      ('Flock Age', '${FarmConfig.flockAgeOnDate(DateTime.now(), startDate: p.farmConfig.flockStartDate)} d', Icons.timelapse_outlined, const Color(0xFF7C3AED), null),
+      ('Eggs', NumberFormat('#,##0').format(p.totalEggs), Icons.egg_alt_outlined, const Color(0xFFF59E0B), null),
+      ('Feed', '${p.totalFeedKg.toStringAsFixed(0)} kg', Icons.inventory_2_outlined, const Color(0xFF15803D), null),
+      ('Standards', 'BV300', Icons.event_note_outlined, const Color(0xFF0891B2), () => _navigate(11)),
+      ('Grit', _gritMetricValue(p), Icons.scatter_plot_outlined, const Color(0xFF9A6B22), null),
+      ('Laying %', '${p.latestLayingPercentage.toStringAsFixed(1)}%', Icons.show_chart_outlined, const Color(0xFF0E9F6E), () => _navigate(0)),
     ];
     return LayoutBuilder(builder: (context, c) {
-      final count = wide ? 3 : c.maxWidth >= 800 ? 2 : 1;
-      final w = (c.maxWidth - (count - 1) * 10) / count;
-      return Wrap(spacing: 10, runSpacing: 10, children: [
-        SizedBox(width: w, child: _birdsCard(p)),
-        ...items.map((e) => SizedBox(width: w, child: _metricCard(e.$1, e.$2, e.$3, e.$4, onTap: e.$1 == 'Laying %' ? () => _navigate(0) : null))),
+      // Keep the dashboard summary compact: 3 columns on larger screens,
+      // 2 columns on phones instead of one very wide card per metric.
+      final count = wide ? 3 : 2;
+      final gap = 8.0;
+      final w = (c.maxWidth - (count - 1) * gap) / count;
+      return Wrap(spacing: gap, runSpacing: gap, children: [
+        SizedBox(width: w, child: _birdsCard(p, compact: true)),
+        ...items.map((e) => SizedBox(
+          width: w,
+          child: _metricCard(e.$1, e.$2, e.$3, e.$4, compact: true, onTap: e.$5),
+        )),
       ]);
     });
   }
@@ -456,18 +468,18 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     return breedName.isEmpty ? 'Birds' : '$breedName Birds';
   }
 
-  Widget _birdsCard(PoultryProvider p) => AppCard(
-    padding: const EdgeInsets.all(14),
+  Widget _birdsCard(PoultryProvider p, {bool compact = false}) => AppCard(
+    padding: EdgeInsets.all(compact ? 10 : 14),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         ClipRRect(borderRadius: BorderRadius.circular(11), child: Image.asset('assets/app_icons/app_logo.png', width: 40, height: 40, fit: BoxFit.cover)),
         const SizedBox(width: 10),
         Text(_birdsTitle(p), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF12251D))),
       ]),
-      const SizedBox(height: 12),
+      SizedBox(height: compact ? 8 : 12),
       Row(children: [
-        Expanded(child: _birdStat('Starting (Day 0)', NumberFormat('#,##0').format(p.startingBirdsAtDayZero))),
-        Expanded(child: _birdStat('Current Alive', NumberFormat('#,##0').format(p.totalBirds))),
+        Expanded(child: _birdStat('Starting', NumberFormat('#,##0').format(p.startingBirdsAtDayZero))),
+        Expanded(child: _birdStat('Alive', NumberFormat('#,##0').format(p.totalBirds))),
         Expanded(child: _birdStat('Mortality', '${p.mortalityPercentage.toStringAsFixed(2)}%')),
       ]),
     ]),
@@ -479,10 +491,28 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     Text(label, style: const TextStyle(fontSize: 9, color: Color(0xFF6A7D73)), maxLines: 2),
   ]);
 
-  Widget _metricCard(String label, String value, IconData icon, Color color, {VoidCallback? onTap}) => InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap, child: AppCard(
-    padding: const EdgeInsets.all(14),
-    child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: color.withValues(alpha: .11), borderRadius: BorderRadius.circular(11)), child: Icon(icon, color: color, size: 22)), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(value, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Color(0xFF12251D))), const SizedBox(height: 2), Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6A7D73)))]))]),
-  ));
+  Widget _metricCard(String label, String value, IconData icon, Color color, {VoidCallback? onTap, bool compact = false}) => InkWell(
+    borderRadius: BorderRadius.circular(13),
+    onTap: onTap,
+    child: AppCard(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 14, vertical: compact ? 9 : 14),
+      child: Row(children: [
+        Container(
+          width: compact ? 32 : 40,
+          height: compact ? 32 : 40,
+          decoration: BoxDecoration(color: color.withValues(alpha: .11), borderRadius: BorderRadius.circular(compact ? 9 : 11)),
+          child: Icon(icon, color: color, size: compact ? 18 : 22),
+        ),
+        SizedBox(width: compact ? 7 : 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(value, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 15 : 19, fontWeight: FontWeight.w800, color: const Color(0xFF12251D))),
+          const SizedBox(height: 1),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 9.5 : 11, color: const Color(0xFF6A7D73))),
+        ])),
+        if (onTap != null) Icon(Icons.chevron_right, size: 16, color: color),
+      ]),
+    ),
+  );
 
   Widget _eggProductionChart(PoultryProvider p) => _EggProductionChart(provider: p);
 
@@ -620,6 +650,196 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   Widget _cell(String text, double flex, {bool header = false}) => Expanded(flex: (flex * 10).round(), child: Text(text, style: TextStyle(fontSize: header ? 10 : 11, color: header ? const Color(0xFF63766C) : const Color(0xFF253B31), fontWeight: header ? FontWeight.w700 : FontWeight.w600), overflow: TextOverflow.ellipsis));
 
   Widget _logRow(PoultryProvider p, dynamic log) => Container(margin: const EdgeInsets.only(top: 7), decoration: BoxDecoration(color: const Color(0xFFF7FAF8), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFE1EAE5))), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LogDetailScreen(log: log))), dense: true, leading: CircleAvatar(radius: 17, backgroundColor: const Color(0xFFE7F5EE), backgroundImage: (log.createdByUid != null && log.createdByUid == FirebaseAuth.instance.currentUser?.uid && FirebaseAuth.instance.currentUser?.photoURL != null) ? NetworkImage(FirebaseAuth.instance.currentUser!.photoURL!) : null, child: (log.createdByUid == null || log.createdByUid != FirebaseAuth.instance.currentUser?.uid || FirebaseAuth.instance.currentUser?.photoURL == null) ? Text((log.createdByName ?? 'U').trim().isEmpty ? 'U' : (log.createdByName ?? 'U').trim()[0].toUpperCase(), style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w900)) : null), title: Text(DateFormat('dd MMM yyyy').format(log.date), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), subtitle: Text('Age ${log.flockAge}d  •  ${log.mortality} mortality  •  ${log.totalEggs} eggs', style: const TextStyle(fontSize: 10, color: Color(0xFF71837A))), trailing: Text('${p.layingPercentageFor(log).toStringAsFixed(1)}%', style: const TextStyle(color: Color(0xFF087A4F), fontWeight: FontWeight.w800))));
+
+  Widget _performanceIndicators(PoultryProvider p) => const SizedBox.shrink();
+
+  String _overallIndicatorStatus(List<BV300MetricIndicator> indicators) {
+    if (indicators.any((i) => i.status == 'critical')) return 'critical';
+    if (indicators.any((i) => i.status == 'warning')) return 'warning';
+    if (indicators.isNotEmpty) return 'normal';
+    return 'warning';
+  }
+
+  String _dailyStatusSummary(BV300AnalyticsSnapshot analytics) {
+    final critical = analytics.indicators.where((i) => i.status == 'critical').length;
+    final warning = analytics.indicators.where((i) => i.status == 'warning').length;
+    if (critical > 0) return '$critical metric${critical == 1 ? '' : 's'} below/above the standard';
+    if (warning > 0) return '$warning metric${warning == 1 ? '' : 's'} close to the standard limit';
+    return '${analytics.indicators.length} metrics within the applicable standard';
+  }
+
+  Widget _statusIndicatorCard({
+    required String title,
+    required String status,
+    required IconData icon,
+    required String subtitle,
+    required VoidCallback onInfo,
+  }) {
+    final critical = status == 'critical';
+    final warning = status == 'warning';
+    final accent = critical
+        ? const Color(0xFFC2410C)
+        : warning
+            ? const Color(0xFFD97706)
+            : const Color(0xFF087A4F);
+    final background = critical
+        ? const Color(0xFFFFF1F0)
+        : warning
+            ? const Color(0xFFFFF8E8)
+            : const Color(0xFFF1FAF5);
+    final label = critical ? 'Needs attention' : warning ? 'Review' : 'On track';
+    final statusIcon = critical
+        ? Icons.error_outline
+        : warning
+            ? Icons.warning_amber_rounded
+            : Icons.check_circle_outline;
+
+    return AppCard(
+      padding: const EdgeInsets.all(13),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: accent, size: 21),
+        ),
+        const SizedBox(width: 11),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF12251D)))),
+            const SizedBox(width: 7),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(20)),
+              child: Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: accent)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Row(children: [
+            Icon(statusIcon, size: 14, color: accent),
+            const SizedBox(width: 4),
+            Expanded(child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF667970)))),
+          ]),
+        ])),
+        IconButton(
+          tooltip: 'View metrics and standards',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          icon: const Icon(Icons.info_outline, size: 19, color: Color(0xFF087A4F)),
+          onPressed: onInfo,
+        ),
+      ]),
+    );
+  }
+
+  void _showDailyLogStandards(BV300AnalyticsSnapshot analytics) {
+    final indicators = analytics.indicators;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.calendar_month_outlined, color: Color(0xFF087A4F)),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Daily Log — Week ${analytics.ageWeek}')),
+        ]),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(analytics.phase, style: const TextStyle(fontSize: 12, color: Color(0xFF71827A))),
+            const SizedBox(height: 12),
+            if (indicators.isEmpty)
+              const Text('Add a daily log to compare actual values with the applicable BV300 matrix standards.', style: TextStyle(fontSize: 13))
+            else ...[
+              const Text('Current performance metrics', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              ...indicators.map((i) => _standardMetricRow(i)),
+            ],
+            const SizedBox(height: 8),
+            const Text('Standards are evaluated against the applicable flock-age matrix. Tap the individual metric info in the Flock Performance section for additional guidance.', style: TextStyle(fontSize: 10, color: Color(0xFF667970))),
+          ])),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  Widget _standardMetricRow(BV300MetricIndicator i) {
+    final accent = i.status == 'critical'
+        ? const Color(0xFFC2410C)
+        : i.status == 'warning'
+            ? const Color(0xFFD97706)
+            : const Color(0xFF087A4F);
+    String fmt(double? value) => value == null ? '—' : value.toStringAsFixed(i.unit == '%' ? 1 : 2);
+    final standard = i.min != null && i.max != null
+        ? '${fmt(i.min)}–${fmt(i.max)} ${i.unit}'
+        : i.min != null
+            ? '≥ ${fmt(i.min)} ${i.unit}'
+            : '≤ ${fmt(i.max)} ${i.unit}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: const Color(0xFFF7FAF8)),
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(i.metric, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 2),
+          Text('Standard: $standard', style: const TextStyle(fontSize: 10, color: Color(0xFF667970))),
+        ])),
+        const SizedBox(width: 8),
+        Text('${i.actual.toStringAsFixed(i.unit == '%' ? 1 : 2)} ${i.unit}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: accent)),
+      ]),
+    );
+  }
+
+  void _showFlockConfigurationStandards(PoultryProvider p, int week) {
+    final standard = BV300AnalyticsService.standardForWeek(week);
+    final geometry = BV300AnalyticsService.eggGeometryForWeek(week);
+    final lighting = BV300AnalyticsService.lightingForWeek(week);
+    final configItems = <String>[
+      'Flock age: ${FarmConfig.flockAgeOnDate(DateTime.now(), startDate: p.farmConfig.flockStartDate)} days (Week $week)',
+      'Breed: ${p.farmConfig.breedName.trim().isEmpty ? 'Not configured' : p.farmConfig.breedName.trim()}',
+      'Starting birds: ${NumberFormat('#,##0').format(p.farmConfig.startingBirds)}',
+      'Accounts configured: ${p.farmConfig.accounts.length}',
+      'Feed items configured: ${p.farmConfig.feedItems.length}',
+    ];
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.tune_outlined, color: Color(0xFF087A4F)),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Flock Configuration & Standards')),
+        ]),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ...configItems.map((x) => Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(x, style: const TextStyle(fontSize: 11)))),
+            const Divider(height: 20),
+            Text('Week $week — ${standard?.phase ?? 'No mapped standard'}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            if (standard != null) ...[
+              if (standard.bodyWeightMin != null && standard.bodyWeightMax != null) _matrixLine('Body weight', '${standard.bodyWeightMin!.toStringAsFixed(0)}–${standard.bodyWeightMax!.toStringAsFixed(0)} g'),
+              if (standard.livabilityMin != null) _matrixLine('Livability', '≥ ${standard.livabilityMin!.toStringAsFixed(1)}%'),
+              if (standard.layingMin != null && standard.layingMax != null) _matrixLine('Laying / HDEP', '${standard.layingMin!.toStringAsFixed(0)}–${standard.layingMax!.toStringAsFixed(0)}%'),
+              if (standard.eggMassMin != null && standard.eggMassMax != null) _matrixLine('Egg mass', '${standard.eggMassMin!.toStringAsFixed(1)}–${standard.eggMassMax!.toStringAsFixed(1)} g/hen/day'),
+              if (standard.cumulativeFeedKg != null) _matrixLine('Cumulative feed', '${standard.cumulativeFeedKg!.toStringAsFixed(2)} kg'),
+            ],
+            if (geometry != null) _matrixLine('Egg weight', '${geometry.eggWeightMin.toStringAsFixed(1)}–${geometry.eggWeightMax.toStringAsFixed(1)} g/egg'),
+            if (lighting != null) _matrixLine('Lighting', '${lighting.lightHours.toStringAsFixed(lighting.lightHours % 1 == 0 ? 0 : 1)} h/day • ${lighting.luxMin.toStringAsFixed(0)}–${lighting.luxMax.toStringAsFixed(0)} lux'),
+            const SizedBox(height: 8),
+            const Text('The configuration card checks required flock setup fields. Performance status is determined from the latest daily log against the applicable BV300 matrix.', style: TextStyle(fontSize: 10, color: Color(0xFF667970))),
+          ])),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
+  Widget _matrixLine(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(children: [Expanded(child: Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF667970)))), Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF087A4F)))]),
+  );
 
   Widget _performanceSuggestions(PoultryProvider p) {
     final a = p.bv300Analytics;
@@ -792,12 +1012,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   Widget _quickActions(PoultryProvider p) => LayoutBuilder(builder: (context, c) {
     final actions = [
-      ('Add Daily Log', 'Record today’s data', Icons.calendar_month_outlined, const Color(0xFF0E9F6E), 2),
       ('Add Expense', 'Track expenses', Icons.payments_outlined, const Color(0xFFF59E0B), 3),
       ('Add Egg Sales', 'Record egg sales', Icons.egg_alt_outlined, const Color(0xFFF97316), 8),
       ('View Reports', 'Growth & analytics', Icons.bar_chart_outlined, const Color(0xFF0E9F6E), 1),
     ];
-    final visibleActions = actions.where((a) => a.$5 == 2 || a.$5 == 0 || p.isAdmin || (a.$5 == 1 && p.hasFeature('reports')) || (a.$5 == 3 && p.hasFeature('expenses')) || (a.$5 == 8 && p.hasFeature('eggSales'))).toList();
+    final visibleActions = actions.where((a) => a.$5 == 0 || p.isAdmin || (a.$5 == 1 && p.hasFeature('reports')) || (a.$5 == 3 && p.hasFeature('expenses')) || (a.$5 == 8 && p.hasFeature('eggSales'))).toList();
     final w = (c.maxWidth - 30) / 4;
     return Wrap(spacing: 10, runSpacing: 10, children: visibleActions.map((a) => SizedBox(width: c.maxWidth < 650 ? (c.maxWidth - 10) / 2 : w, child: InkWell(onTap: () => _navigate(a.$5), child: AppCard(padding: const EdgeInsets.all(12), child: Row(children: [Container(width: 34, height: 34, decoration: BoxDecoration(color: a.$4.withValues(alpha: .11), borderRadius: BorderRadius.circular(9)), child: Icon(a.$3, color: a.$4, size: 19)), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(a.$1, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)), Text(a.$2, style: const TextStyle(fontSize: 9, color: Color(0xFF75867D)))]))]))))).toList());
   });

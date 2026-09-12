@@ -24,7 +24,9 @@ const poultryNavItems = <AppNavItem>[
   AppNavItem('Other Expenses', 'Record other expenses', Icons.folder_outlined, Color(0xFF7C3AED)),
   AppNavItem('Egg Sales', 'Track egg sales', Icons.egg_alt_outlined, Color(0xFFF97316)),
   AppNavItem('Suppliers', 'Supplier directory', Icons.local_shipping_outlined, Color(0xFF0EA5A4)),
-  AppNavItem('Settings', 'App preferences', Icons.settings_outlined, Color(0xFF64748B)),
+  AppNavItem('Admin', 'Farm administration', Icons.admin_panel_settings_outlined, Color(0xFF64748B)),
+  AppNavItem('Standards Calendar', 'BV300 daily benchmarks', Icons.event_note_outlined, Color(0xFF0891B2)),
+  AppNavItem('My Profile', 'Personal account information', Icons.person_outline, Color(0xFF7C3AED)),
 ];
 
 class PoultryAppShell extends StatelessWidget {
@@ -36,7 +38,7 @@ class PoultryAppShell extends StatelessWidget {
   final void Function(int index)? onNavigate;
   final Widget? trailing;
   final Widget? headerOverride;
-  
+
   const PoultryAppShell({
     super.key,
     required this.child,
@@ -50,53 +52,137 @@ class PoultryAppShell extends StatelessWidget {
   });
 
   List<int> _visibleIndices(PoultryProvider provider) {
-    if (provider.isAdmin) return List<int>.generate(poultryNavItems.length, (i) => i);
-    final result = <int>[0, 2];
-    const gated = <int, String>{1: 'reports', 3: 'medical', 4: 'feed', 5: 'grit', 6: 'tray', 7: 'otherExpenses', 8: 'eggSales', 9: 'suppliers'};
+    if (provider.isAdmin) return List<int>.generate(poultryNavItems.length, (i) => i).where((i) => i != 11).toList();
+    final result = <int>[0, 2, 12];
+    const gated = <int, String>{
+      1: 'reports',
+      3: 'medical',
+      4: 'feed',
+      5: 'grit',
+      6: 'tray',
+      7: 'otherExpenses',
+      8: 'eggSales',
+      9: 'suppliers',
+    };
     for (final entry in gated.entries) {
       if (provider.hasFeature(entry.value)) result.add(entry.key);
     }
     return result..sort();
   }
 
+  bool _isMobileOrTablet(BuildContext context) => MediaQuery.sizeOf(context).width < 1024;
+
+  int _mobileTabIndex() {
+    switch (selectedIndex) {
+      case 0:
+        return 0;
+      case 2:
+        return 1;
+      case 1:
+        return 2;
+      case 10:
+      case 12:
+        return 3;
+      default:
+        return 3;
+    }
+  }
+
+  void _navigateMobileTab(BuildContext context, int tab) {
+    const mapping = <int, int>{0: 0, 1: 2, 2: 1, 3: 10};
+    final index = mapping[tab];
+    if (index != null) onNavigate?.call(index);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<PoultryProvider>(builder: (context, provider, _) {
       final visibleIndices = _visibleIndices(provider);
+      final compact = _isMobileOrTablet(context);
+
       return Scaffold(
-      backgroundColor: const Color(0xFFF3F7F4),
-      drawer: _MobileDrawer(selectedIndex: selectedIndex, onNavigate: onNavigate, visibleIndices: visibleIndices),
-      body: Row(
-        children: [
-          if (MediaQuery.sizeOf(context).width >= 900)
-            _DesktopSidebar(selectedIndex: selectedIndex, onNavigate: onNavigate, visibleIndices: visibleIndices),
-          Expanded(
-            child: Column(
-              children: [
-                if (MediaQuery.sizeOf(context).width < 900)
-                  _MobileHeader(
-                    title: title,
-                    subtitle: subtitle,
-                    onBack: onBack,
-                    trailing: trailing,
-                  )
-                else
-                  headerOverride ?? _DesktopHeader(
-                    title: title,
-                    subtitle: subtitle,
-                    onBack: onBack,
-                    trailing: trailing,
-                  ),
-                if (MediaQuery.sizeOf(context).width < 900 && headerOverride != null)
-                  headerOverride!,
-                Expanded(child: child),
-              ],
+        backgroundColor: const Color(0xFFF3F7F4),
+        bottomNavigationBar: compact && onNavigate != null
+            ? Builder(
+                builder: (scaffoldContext) => _MobileBottomNavigation(
+                  selectedIndex: _mobileTabIndex(),
+                  onSelected: (tab) => _navigateMobileTab(scaffoldContext, tab),
+                ),
+              )
+            : null,
+        body: Row(
+          children: [
+            if (!compact)
+              _DesktopSidebar(
+                selectedIndex: selectedIndex,
+                onNavigate: onNavigate,
+                visibleIndices: visibleIndices,
+              ),
+            Expanded(
+              child: Column(
+                children: [
+                  if (compact)
+                    headerOverride ??
+                        _MobileHeader(
+                          title: title,
+                          subtitle: subtitle,
+                          onBack: onBack,
+                          trailing: trailing,
+                        )
+                  else
+                    headerOverride ??
+                        _DesktopHeader(
+                          title: title,
+                          subtitle: subtitle,
+                          onBack: onBack,
+                          trailing: trailing,
+                        ),
+                  Expanded(child: child),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       );
     });
+  }
+}
+
+class _MobileBottomNavigation extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  const _MobileBottomNavigation({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  static const _items = <({IconData icon, IconData activeIcon, String label})>[
+    (icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: 'Home'),
+    (icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month, label: 'Daily'),
+    (icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart, label: 'Reports'),
+    (icon: Icons.admin_panel_settings_outlined, activeIcon: Icons.admin_panel_settings, label: 'Admin'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return NavigationBar(
+      selectedIndex: selectedIndex,
+      onDestinationSelected: onSelected,
+      height: 68,
+      elevation: 10,
+      backgroundColor: Colors.white,
+      indicatorColor: const Color(0xFFD7F3E7),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      destinations: [
+        for (final item in _items)
+          NavigationDestination(
+            icon: Icon(item.icon),
+            selectedIcon: Icon(item.activeIcon),
+            label: item.label,
+          ),
+      ],
+    );
   }
 }
 
@@ -130,7 +216,7 @@ class _DesktopSidebar extends StatelessWidget {
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: _UserProfileTile(onTap: onNavigate == null ? null : () => onNavigate!(11)),
+              child: _UserProfileTile(onTap: onNavigate == null ? null : () => onNavigate!(12)),
             ),
             const SizedBox(height: 14),
             Expanded(
@@ -147,45 +233,6 @@ class _DesktopSidebar extends StatelessWidget {
             const Divider(color: Colors.white24, indent: 16, endIndent: 16),
             const _LogoutTile(),
             const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MobileDrawer extends StatelessWidget {
-  final int selectedIndex;
-  final void Function(int)? onNavigate;
-  final List<int> visibleIndices;
-  const _MobileDrawer({required this.selectedIndex, required this.onNavigate, required this.visibleIndices});
-
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      backgroundColor: const Color(0xFF064532),
-      child: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 18),
-            ClipRRect(borderRadius: BorderRadius.circular(19), child: Image.asset('assets/app_icons/app_logo.png', width: 76, height: 76, fit: BoxFit.cover)),
-            const SizedBox(height: 8),
-            const Text('Poultry Inventory', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 20),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                itemCount: visibleIndices.length,
-                itemBuilder: (context, index) {
-                  final itemIndex = visibleIndices[index];
-                  final item = poultryNavItems[itemIndex];
-                  return _NavTile(item: item, selected: itemIndex == selectedIndex, onTap: onNavigate == null ? null : () { Navigator.pop(context); onNavigate!(itemIndex); });
-                },
-              ),
-            ),
-            const Divider(color: Colors.white24, indent: 16, endIndent: 16),
-            const _LogoutTile(),
-            const SizedBox(height: 12),
           ],
         ),
       ),
@@ -247,11 +294,28 @@ class _UserProfileTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white24,
-              backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl),
-              child: photoUrl == null ? const Icon(Icons.person, color: Colors.white, size: 19) : null,
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: ClipOval(
+                child: photoUrl == null
+                    ? Container(
+                        color: Colors.white24,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.person, color: Colors.white, size: 19),
+                      )
+                    : Image.network(
+                        photoUrl,
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.white24,
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.person, color: Colors.white, size: 19),
+                        ),
+                      ),
+              ),
             ),
             const SizedBox(width: 9),
             Expanded(
@@ -320,25 +384,27 @@ class DashboardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final mobile = MediaQuery.sizeOf(context).width < 1024;
     final start = DateFormat('dd MMM yyyy').format(startDate);
     final ageText = '$age days old';
 
-    return Container(
-      height: wide ? 86 : 74,
-      padding: EdgeInsets.fromLTRB(wide ? 24 : 14, 10, wide ? 24 : 14, 8),
+    final content = Container(
+      height: mobile ? 78 : 86,
+      padding: EdgeInsets.fromLTRB(mobile ? 4 : 24, 8, mobile ? 14 : 24, 8),
       child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(wide ? 14 : 12),
-            child: Image.asset(
-              'assets/app_icons/app_logo.png',
-              width: wide ? 58 : 48,
-              height: wide ? 58 : 48,
-              fit: BoxFit.cover,
+          SizedBox(
+            width: mobile ? 44 : 58,
+            height: mobile ? 44 : 58,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(mobile ? 11 : 14),
+              child: Image.asset(
+                'assets/app_icons/app_logo.png',
+                fit: BoxFit.cover,
+              ),
             ),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: mobile ? 10 : 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,25 +415,20 @@ class DashboardHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Color(0xFF0B3D2E),
-                    fontSize: wide ? 23 : 18,
+                    color: const Color(0xFF0B3D2E),
+                    fontSize: mobile ? 17 : 23,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 14,
-                  runSpacing: 2,
-                  children: [
-                    Text(
-                      'Started $start',
-                      style: TextStyle(color: Color(0xFF527064), fontSize: wide ? 12 : 10),
-                    ),
-                    Text(
-                      'Age $ageText',
-                      style: TextStyle(color: Color(0xFF527064), fontSize: wide ? 12 : 10),
-                    ),
-                  ],
+                const SizedBox(height: 3),
+                Text(
+                  mobile ? 'Age $ageText' : 'Started $start  •  Age $ageText',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xFF527064),
+                    fontSize: mobile ? 10 : 12,
+                  ),
                 ),
               ],
             ),
@@ -375,6 +436,8 @@ class DashboardHeader extends StatelessWidget {
         ],
       ),
     );
+
+    return mobile ? SafeArea(bottom: false, child: content) : content;
   }
 }
 
@@ -423,8 +486,20 @@ class _MobileHeader extends StatelessWidget {
         bottom: false,
         child: Row(
           children: [
-            if (onBack != null) IconButton(onPressed: onBack, icon: const Icon(Icons.arrow_back, color: Colors.white)) else IconButton(onPressed: () => Scaffold.of(context).openDrawer(), icon: const Icon(Icons.menu, color: Colors.white)),
-            Image.asset('assets/app_icons/playstore.png', width: 38, height: 38),
+            if (onBack != null) IconButton(onPressed: onBack, icon: const Icon(Icons.arrow_back, color: Colors.white)) else const SizedBox(width: 8),
+            SizedBox(
+              width: 38,
+              height: 38,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Image.asset(
+                  'assets/app_icons/playstore.png',
+                  width: 38,
+                  height: 38,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
             const SizedBox(width: 9),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)), if (subtitle.isNotEmpty) Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 10))])),
             if (trailing != null) trailing!,

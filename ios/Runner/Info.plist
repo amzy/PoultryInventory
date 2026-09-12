@@ -2,13 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose an optional profile photo for your Poultry Inventory account.</string>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Allow Poultry Inventory to select contacts to add as suppliers.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Use the camera to take an optional profile photo for your Poultry Inventory account.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose an optional profile photo for your Poultry Inventory account.</string>
 </dict>
 </plist>

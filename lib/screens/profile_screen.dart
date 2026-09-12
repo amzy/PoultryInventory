@@ -57,8 +57,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _pickAvatar() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Profile photo',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.camera_alt_outlined)),
+              title: const Text('Take a photo'),
+              subtitle: const Text('Use your device camera'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.photo_library_outlined)),
+              title: const Text('Choose from photos'),
+              subtitle: const Text('Select an existing photo'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
     final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+      source: source,
       imageQuality: 75,
       maxWidth: 600,
       maxHeight: 600,
@@ -154,17 +190,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Stack(
                   alignment: Alignment.bottomRight,
                   children: [
-                    CircleAvatar(
-                      radius: 52,
-                      backgroundColor: const Color(0xFFE5F1EB),
-                      backgroundImage: image,
-                      child: image == null
-                          ? const Icon(
-                              Icons.person,
-                              size: 54,
-                              color: Color(0xFF087A4F),
-                            )
-                          : null,
+                    SizedBox(
+                      width: 104,
+                      height: 104,
+                      child: ClipOval(
+                        child: image == null
+                            ? Container(
+                                color: const Color(0xFFE5F1EB),
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  Icons.person,
+                                  size: 54,
+                                  color: Color(0xFF087A4F),
+                                ),
+                              )
+                            : Image(image: image, width: 104, height: 104, fit: BoxFit.cover),
+                      ),
                     ),
                     Container(
                       padding: const EdgeInsets.all(8),
