@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -69,10 +70,36 @@ class MarketPriceService {
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
   final Set<String> _initialRefreshRequested = <String>{};
 
-  Stream<MarketPrice?> watchMarket(String marketId) {
-    return _db.collection('market_prices').doc(marketId).snapshots().map((snap) {
-      if (!snap.exists) return null;
-      return MarketPrice.fromFirestore(snap.id, snap.data() ?? const {});
+  Stream<MarketPrice?> watchMarket(String marketId) async* {
+    final ref = _db.collection('market_prices').doc(marketId);
+
+    // Fetch once before attaching the realtime listener. This makes the
+    // dashboard resilient when the first realtime snapshot is delayed on
+    // web/mobile startup and also gives us a concrete read error to diagnose.
+    try {
+      final initial = await ref.get();
+      if (initial.exists) {
+        final price = MarketPrice.fromFirestore(initial.id, initial.data() ?? const {});
+        debugPrint('[MarketPrice][GET] $marketId status=${price.status} today=${price.todayPrice}');
+        yield price;
+      } else {
+        debugPrint('[MarketPrice][GET] $marketId document missing');
+        yield null;
+      }
+    } catch (error) {
+      debugPrint('[MarketPrice][GET][ERROR] $marketId $error');
+      // Keep the realtime listener alive; it may still succeed after a
+      // transient startup/network failure.
+    }
+
+    yield* ref.snapshots().map((snap) {
+      if (!snap.exists) {
+        debugPrint('[MarketPrice][WATCH] $marketId document missing');
+        return null;
+      }
+      final price = MarketPrice.fromFirestore(snap.id, snap.data() ?? const {});
+      debugPrint('[MarketPrice][WATCH] $marketId status=${price.status} today=${price.todayPrice} date=${price.dateKey}');
+      return price;
     });
   }
 

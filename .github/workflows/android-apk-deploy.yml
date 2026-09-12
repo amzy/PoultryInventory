@@ -1,0 +1,81 @@
+name: Android APK Build & Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  build-apk:
+    name: Build Android Release APK
+    runs-on: [self-hosted]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Flutter toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Flutter:" 
+          flutter --version
+          echo "Dart:"
+          dart --version
+          echo "Java:"
+          java -version
+          echo "Android SDK:"
+          if [ -n "${ANDROID_HOME:-}" ]; then
+            echo "$ANDROID_HOME"
+          elif [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            echo "$ANDROID_SDK_ROOT"
+          else
+            echo "ANDROID_HOME/ANDROID_SDK_ROOT is not set; continuing because Flutter may already know the SDK location."
+          fi
+
+          FLUTTER_ACTUAL="$(flutter --version | sed -n '1p' | sed -E 's/.*Flutter ([0-9.]+).*/\1/')"
+          if [ "$FLUTTER_ACTUAL" != "$FLUTTER_VERSION" ]; then
+            echo "WARNING: Expected Flutter $FLUTTER_VERSION, found $FLUTTER_ACTUAL."
+          fi
+
+      - name: Install Dart dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deployment
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "deployment/poultry-inventory-${GITHUB_SHA::8}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: poultry-inventory-apk-${{ github.sha }}
+          path: deployment/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish tagged APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: deployment/*.apk
+          generate_release_notes: true

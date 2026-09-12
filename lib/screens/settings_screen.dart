@@ -345,13 +345,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _importFlockBackup() async {
     if (_importing) return;
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['json'],
-      withData: true,
     );
-    final bytes = result?.files.single.bytes;
-    if (bytes == null || bytes.isEmpty) return;
+    if (result == null) return;
+    final bytes = await result.readAsBytes();
+    if (bytes.isEmpty) return;
 
     setState(() { _importing = true; _importStatus = 'Reading backup…'; });
     try {
@@ -415,13 +415,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _importCashewData() async {
     if (_importing) return;
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['sql', 'db', 'sqlite', 'sqlite3'],
-      withData: true,
     );
-    final bytes = result?.files.single.bytes;
-    if (bytes == null || bytes.isEmpty) return;
+    if (result == null) return;
+    final bytes = await result.readAsBytes();
+    if (bytes.isEmpty) return;
 
     setState(() { _importing = true; _importStatus = 'Reading import file…'; });
     try {

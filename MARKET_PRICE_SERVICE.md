@@ -59,3 +59,21 @@ After deployment, the scheduled 06:15 IST run remains the normal daily refresh. 
 ## Firestore security
 
 Users who are signed in can read `market_prices`. Client writes are denied. Only Cloud Functions/Admin SDK can write the feed, preventing members or clients from spoofing market prices.
+
+## Cloud Logging retention
+
+Market-price diagnostics are intentionally logged on the server so parser/provider failures can be diagnosed without shipping sensitive debug data to the Flutter client. Log cleanup is handled by **Google Cloud Logging bucket retention**, not by a Cloud Function that deletes log entries.
+
+Configure the configurable `_Default` logging bucket from the project root:
+
+```bash
+./scripts/configure_log_retention.sh
+```
+
+The script defaults to **7 days**. To use another retention period:
+
+```bash
+LOG_RETENTION_DAYS=14 ./scripts/configure_log_retention.sh
+```
+
+The supported range is 1–3650 days. Google Cloud's `_Required` bucket is managed by Google and is not deleted by this mechanism. This avoids adding a scheduled cleanup function and avoids a function trying to delete its own logs.

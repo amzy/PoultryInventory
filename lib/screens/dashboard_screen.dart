@@ -483,30 +483,91 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   Widget _metrics(PoultryProvider p, bool wide) {
     final items = [
-      ('Flock Age', '${FarmConfig.flockAgeOnDate(DateTime.now(), startDate: p.farmConfig.flockStartDate)} d', Icons.timelapse_outlined, const Color(0xFF7C3AED), null),
       ('Eggs', NumberFormat('#,##0').format(p.totalEggs), Icons.egg_alt_outlined, const Color(0xFFF59E0B), null),
       ('Feed', '${p.totalFeedKg.toStringAsFixed(0)} kg', Icons.inventory_2_outlined, const Color(0xFF15803D), null),
-      ('Today Price', 'Live market', Icons.currency_rupee_outlined, const Color(0xFF2563EB), null),
-      ('Standards', 'BV300', Icons.event_note_outlined, const Color(0xFF0891B2), () => _navigate(11)),
       ('Grit', _gritMetricValue(p), Icons.scatter_plot_outlined, const Color(0xFF9A6B22), null),
       ('Laying %', '${p.latestLayingPercentage.toStringAsFixed(1)}%', Icons.show_chart_outlined, const Color(0xFF0E9F6E), () => _navigate(0)),
     ];
+
     return LayoutBuilder(builder: (context, c) {
-      // Keep the dashboard summary compact: 6 columns on larger screens
-      // so the key metric cards stay narrow and leave more room for the
-      // charts/content below; 2 columns on phones for readability.
-      final count = wide ? 6 : 2;
-      final gap = 8.0;
-      final w = (c.maxWidth - (count - 1) * gap) / count;
-      return Wrap(spacing: gap, runSpacing: gap, children: [
-        SizedBox(width: w, child: _birdsCard(p, compact: true)),
-        ...items.map((e) => SizedBox(
-          width: w,
-          child: e.$1 == 'Today Price'
-              ? _marketPriceCard(compact: true)
-              : _metricCard(e.$1, e.$2, e.$3, e.$4, compact: true, onTap: e.$5),
-        )),
-      ]);
+      final gap = 10.0;
+      final cardWidth = wide ? (c.maxWidth - gap) / 2 : c.maxWidth;
+      final compactCount = wide ? 4 : 2;
+      final compactWidth = wide
+          ? (c.maxWidth - (compactCount - 1) * gap) / compactCount
+          : (c.maxWidth - gap) / 2;
+
+      final topSection = wide
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: cardWidth,
+                  child: _birdsCard(p, compact: true),
+                ),
+                SizedBox(width: gap),
+                SizedBox(
+                  width: cardWidth,
+                  child: Column(
+                    children: [
+                      _marketPriceCard(compact: true),
+                      const SizedBox(height: 10),
+                      _metricCard(
+                        'Standards',
+                        'BV300',
+                        Icons.event_note_outlined,
+                        const Color(0xFF0891B2),
+                        compact: true,
+                        onTap: () => _navigate(11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                _birdsCard(p, compact: true),
+                SizedBox(height: gap),
+                _marketPriceCard(compact: true),
+                SizedBox(height: gap),
+                _metricCard(
+                  'Standards',
+                  'BV300',
+                  Icons.event_note_outlined,
+                  const Color(0xFF0891B2),
+                  compact: true,
+                  onTap: () => _navigate(11),
+                ),
+              ],
+            );
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          topSection,
+          if (p.hasFeature('expenses')) ...[
+            const SizedBox(height: 10),
+            _financialSummaryCards(p),
+          ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: items.map((e) => SizedBox(
+              width: compactWidth,
+              child: _metricCard(
+                e.$1,
+                e.$2,
+                e.$3,
+                e.$4,
+                compact: true,
+                onTap: e.$5,
+              ),
+            )).toList(),
+          ),
+        ],
+      );
     });
   }
 
@@ -517,6 +578,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       builder: (context, snap) {
         final price = snap.data;
         final available = price?.isAvailable == true;
+        final hasError = snap.hasError;
         final change = price?.change ?? 0.0;
         final isUp = change > 0;
         final isDown = change < 0;
@@ -531,7 +593,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 ? Icons.arrow_downward_rounded
                 : Icons.remove_rounded;
         final trendText = !available
-            ? (snap.connectionState == ConnectionState.waiting ? 'Loading live price…' : 'Price unavailable')
+            ? (hasError
+                ? 'Unable to read live price'
+                : snap.connectionState == ConnectionState.waiting
+                    ? 'Loading live price…'
+                    : 'Price unavailable')
             : price!.change == null
                 ? 'First live price'
                 : change == 0
@@ -542,32 +608,37 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           borderRadius: BorderRadius.circular(13),
           onTap: () => _openMarketPrice(price),
           child: AppCard(
-            padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 14, vertical: compact ? 9 : 14),
+            padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14, vertical: compact ? 12 : 14),
             child: Row(children: [
               Container(
-                width: compact ? 32 : 40,
-                height: compact ? 32 : 40,
+                width: compact ? 36 : 40,
+                height: compact ? 36 : 40,
                 decoration: BoxDecoration(
                   color: trendColor.withValues(alpha: .10),
-                  borderRadius: BorderRadius.circular(compact ? 9 : 11),
+                  borderRadius: BorderRadius.circular(compact ? 10 : 11),
                 ),
-                child: Icon(trendIcon, color: trendColor, size: compact ? 18 : 22),
+                child: Icon(trendIcon, color: trendColor, size: compact ? 19 : 22),
               ),
-              SizedBox(width: compact ? 7 : 10),
+              SizedBox(width: compact ? 9 : 10),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
                     available ? '₹${price!.todayPrice!.toStringAsFixed(2)}/egg' : 'Live price…',
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: compact ? 15 : 19, fontWeight: FontWeight.w800, color: const Color(0xFF12251D)),
+                    style: TextStyle(fontSize: compact ? 16 : 19, fontWeight: FontWeight.w800, color: const Color(0xFF12251D)),
                   ),
-                  const SizedBox(height: 1),
+                  const SizedBox(height: 2),
                   Row(children: [
                     Icon(trendIcon, size: compact ? 12 : 14, color: trendColor),
                     const SizedBox(width: 2),
-                    Flexible(child: Text(trendText, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 9 : 10.5, fontWeight: FontWeight.w700, color: trendColor))),
+                    Flexible(child: Text(trendText, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 9.5 : 10.5, fontWeight: FontWeight.w700, color: trendColor))),
                   ]),
-                  Text('${market.name} • ${available ? 'updated ${price!.dateKey}' : 'waiting for server update'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 8.5 : 10, color: const Color(0xFF6A7D73))),
+                  Text(
+                    '${market.name} • ${available ? 'updated ${price!.dateKey}' : hasError ? 'check connection / Firestore access' : 'waiting for server update'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: compact ? 8.5 : 10, color: const Color(0xFF6A7D73)),
+                  ),
                 ]),
               ),
               Icon(Icons.chevron_right, size: 16, color: trendColor),
@@ -577,6 +648,119 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       },
     );
   }
+
+  Widget _financialSummaryCards(PoultryProvider p) {
+    if (p.expenseRecordsLoading && !p.expenseRecordsLoaded) {
+      final loading = Row(
+        children: [
+          Expanded(child: _financialCard('Expenses', 'Loading…', Icons.arrow_downward_rounded, const Color(0xFFDC2626))),
+          const SizedBox(width: 10),
+          Expanded(child: _financialCard('Earnings', 'Loading…', Icons.arrow_upward_rounded, const Color(0xFF087A4F))),
+        ],
+      );
+      return loading;
+    }
+
+    if (p.expenseRecordsError != null) {
+      return _financialErrorCard();
+    }
+
+    final expenses = p.totalExpenses;
+    final earnings = p.totalCredits;
+    final cards = Row(
+      children: [
+        Expanded(
+          child: _financialCard(
+            'Expenses',
+            _money(expenses),
+            Icons.arrow_downward_rounded,
+            const Color(0xFFDC2626),
+            subtitle: 'Total farm expenses',
+            onTap: _openTransactionsInShell,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _financialCard(
+            'Earnings',
+            _money(earnings),
+            Icons.arrow_upward_rounded,
+            const Color(0xFF087A4F),
+            subtitle: 'Total income received',
+            onTap: _openTransactionsInShell,
+          ),
+        ),
+      ],
+    );
+
+    // Keep both cards equal-width on desktop and mobile for a consistent
+    // dashboard rhythm.
+    return cards;
+  }
+
+  Widget _financialCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    String? subtitle,
+    VoidCallback? onTap,
+  }) => InkWell(
+    borderRadius: BorderRadius.circular(13),
+    onTap: onTap,
+    child: AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 19),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF6A7D73))),
+                const SizedBox(height: 1),
+                Text(value, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF12251D))),
+                if (subtitle != null)
+                  Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 8.5, color: Color(0xFF71827A))),
+              ],
+            ),
+          ),
+          if (onTap != null) Icon(Icons.chevron_right, size: 16, color: color),
+        ],
+      ),
+    ),
+  );
+
+  Widget _financialErrorCard() => AppCard(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    child: Row(
+      children: [
+        const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFFDC2626), size: 20),
+        const SizedBox(width: 9),
+        const Expanded(
+          child: Text(
+            'Unable to load Expenses / Earnings.',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF12251D)),
+          ),
+        ),
+        TextButton(
+          onPressed: () => context.read<PoultryProvider>().loadExpenseRecords(force: true),
+          child: const Text('Retry'),
+        ),
+      ],
+    ),
+  );
+
+  String _money(double value) => '₹${NumberFormat('#,##0.00').format(value)}';
 
   String _gritMetricValue(PoultryProvider p) {
     final grit = p.logs.fold<double>(0, (sum, log) => sum + log.stoneGritConsumed);
@@ -1144,7 +1328,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   });
 
   Widget _error(String text) => Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF1F0), borderRadius: BorderRadius.circular(11), border: Border.all(color: const Color(0xFFF5C2C0))), child: Text(text, style: const TextStyle(color: Color(0xFF9F2D28), fontSize: 12)));
-  String _money(double value) => '₹${NumberFormat('#,##0').format(value)}';
 
 }
 

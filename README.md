@@ -51,3 +51,13 @@ If this Firebase project contains records created before flock support and no fl
 ## Live market prices
 
 Dashboard market prices are synchronized server-side by Firebase Cloud Functions into `market_prices/{marketId}`. See `MARKET_PRICE_SERVICE.md` for the mKisan API secret and scheduled-refresh deployment steps.
+
+### Cloud Function log retention
+
+Cloud Function diagnostic logs can be configured for automatic deletion using Google Cloud Logging retention:
+
+```bash
+./scripts/configure_log_retention.sh
+```
+
+Default retention is 7 days. Override it with `LOG_RETENTION_DAYS=<days>` when needed.
