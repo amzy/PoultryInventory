@@ -68,10 +68,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  'Profile photo',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
+                child: Text('Profile photo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               ),
             ),
             ListTile(
@@ -92,13 +89,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (source == null) return;
-
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      imageQuality: 75,
-      maxWidth: 600,
-      maxHeight: 600,
-    );
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 75, maxWidth: 600, maxHeight: 600);
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     if (bytes.isEmpty) return;
@@ -121,7 +112,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _snack('Enter a valid age.');
       return;
     }
-
     setState(() => _saving = true);
     try {
       await context.read<PoultryProvider>().updateUserProfile(
@@ -165,147 +155,156 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_loading) {
       final loading = const Center(child: CircularProgressIndicator());
       if (widget.embedded) return loading;
-
-      return PoultryAppShell(
-        title: 'My Profile',
-        subtitle: 'Personal account information',
-        onBack: () => Navigator.maybePop(context),
-        child: loading,
-      );
+      return PoultryAppShell(title: 'My Profile', subtitle: 'Personal account information', onBack: () => Navigator.maybePop(context), child: loading);
     }
 
     final user = FirebaseAuth.instance.currentUser;
-    final image = _avatarBase64 == null || _avatarBase64!.isEmpty
-        ? null
-        : MemoryImage(base64Decode(_avatarBase64!));
+    final image = _avatarBase64 == null || _avatarBase64!.isEmpty ? null : MemoryImage(base64Decode(_avatarBase64!));
+    final displayName = _name.text.trim().isEmpty ? 'User' : _name.text.trim();
+    final email = user?.email ?? _email.text.trim();
 
-    final content = ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
-      children: [
-        AppCard(
-          child: Column(
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final mobile = constraints.maxWidth < 700;
+        if (mobile) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
-              GestureDetector(
-                onTap: _pickAvatar,
-                child: Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    SizedBox(
-                      width: 104,
-                      height: 104,
-                      child: ClipOval(
-                        child: image == null
-                            ? Container(
-                                color: const Color(0xFFE5F1EB),
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.person,
-                                  size: 54,
-                                  color: Color(0xFF087A4F),
-                                ),
-                              )
-                            : Image(image: image, width: 104, height: 104, fit: BoxFit.cover),
+              Center(
+                child: GestureDetector(
+                  onTap: _pickAvatar,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      Container(
+                        width: 112,
+                        height: 112,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFB9DEC8), width: 3),
+                        ),
+                        child: ClipOval(
+                          child: image == null
+                              ? Container(color: const Color(0xFFE5F1EB), alignment: Alignment.center, child: const Icon(Icons.person, size: 58, color: Color(0xFF087A4F)))
+                              : Image(image: image, fit: BoxFit.cover),
+                        ),
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF087A4F),
-                        shape: BoxShape.circle,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(color: Color(0xFF087A4F), shape: BoxShape.circle),
+                        child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 18),
                       ),
-                      child: const Icon(
-                        Icons.camera_alt_outlined,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
+              Center(child: Text(displayName, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF162A21)))),
+              if (email.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Center(child: Text(email, style: const TextStyle(fontSize: 12, color: Color(0xFF75867D)))),
+              ],
+              const SizedBox(height: 24),
+              _profileMenuCard([
+                _profileMenu('person_outline', 'Personal information', 'Name, mobile number and age', () => _showEditDetails()),
+                _profileMenu('photo_camera_outlined', 'Profile photo', 'Change your profile picture', _pickAvatar),
+                _profileMenu('security_outlined', 'Account & security', 'Email and sign-in information', () => _showSecurityInfo()),
+              ]),
+              const SizedBox(height: 14),
+              _profileDetailsCard(),
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 30),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: _profileDetailsCard()),
+            const SizedBox(width: 16),
+            Expanded(child: _profileEditCard()),
+          ]),
+        );
+      },
+    );
+
+    if (widget.embedded) return content;
+    return PoultryAppShell(title: 'My Profile', subtitle: 'Personal account information', onBack: () => Navigator.maybePop(context), child: content);
+  }
+
+  Widget _profileMenu(String iconName, String title, String subtitle, VoidCallback onTap) {
+    final icons = <String, IconData>{
+      'person_outline': Icons.person_outline,
+      'photo_camera_outlined': Icons.photo_camera_outlined,
+      'security_outlined': Icons.security_outlined,
+    };
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+      leading: Container(width: 42, height: 42, decoration: BoxDecoration(color: const Color(0xFFE7F6EE), borderRadius: BorderRadius.circular(12)), child: Icon(icons[iconName], color: const Color(0xFF087A4F))),
+      title: Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Color(0xFF75867D))),
+      trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A39B)),
+      onTap: onTap,
+    );
+  }
+
+  Widget _profileMenuCard(List<Widget> children) => Card(margin: EdgeInsets.zero, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: const BorderSide(color: Color(0xFFE1E9E4))), child: Column(children: children));
+
+  Widget _profileDetailsCard() => AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    const Text('ACCOUNT DETAILS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: Color(0xFF7A8B83))),
+    const SizedBox(height: 12),
+    _detailRow(Icons.person_outline, 'Full Name', _name.text.isEmpty ? 'Not set' : _name.text),
+    _detailRow(Icons.email_outlined, 'Email', _email.text.isEmpty ? 'Not available' : _email.text),
+    _detailRow(Icons.phone_outlined, 'Mobile', _mobile.text.isEmpty ? 'Not set' : _mobile.text),
+    _detailRow(Icons.cake_outlined, 'Age', _age.text.isEmpty ? 'Not set' : _age.text),
+  ]));
+
+  Widget _detailRow(IconData icon, String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      children: [
+        Icon(icon, size: 19, color: const Color(0xFF0E9F6E)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                user?.email ?? _email.text,
+                label,
                 style: const TextStyle(
+                  fontSize: 10,
                   color: Color(0xFF75867D),
-                  fontSize: 12,
                 ),
               ),
-              const SizedBox(height: 20),
-              _field(_name, 'Full Name', Icons.person_outline),
-              const SizedBox(height: 10),
-              _field(
-                _email,
-                'Email Address',
-                Icons.email_outlined,
-                keyboard: TextInputType.emailAddress,
-                readOnly: true,
-              ),
-              const SizedBox(height: 10),
-              _field(
-                _mobile,
-                'Mobile Number',
-                Icons.phone_outlined,
-                keyboard: TextInputType.phone,
-              ),
-              const SizedBox(height: 10),
-              _field(
-                _age,
-                'Age',
-                Icons.cake_outlined,
-                keyboard: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: FilledButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: Text(_saving ? 'Saving…' : 'Save Profile'),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A2D24),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        const AppCard(
-          child: Text(
-            'Email is your sign-in address and is read-only here. Your role and flock permissions are managed separately and cannot be changed from your profile.',
-            style: TextStyle(
-              fontSize: 11,
-              height: 1.45,
-              color: Color(0xFF456157),
-            ),
-          ),
-        ),
       ],
-    );
+    ),
+  );
 
-    if (widget.embedded) return content;
+  Widget _profileEditCard() => AppCard(child: Column(children: [
+    _field(_name, 'Full Name', Icons.person_outline), const SizedBox(height: 10),
+    _field(_email, 'Email Address', Icons.email_outlined, keyboard: TextInputType.emailAddress, readOnly: true), const SizedBox(height: 10),
+    _field(_mobile, 'Mobile Number', Icons.phone_outlined, keyboard: TextInputType.phone), const SizedBox(height: 10),
+    _field(_age, 'Age', Icons.cake_outlined, keyboard: TextInputType.number), const SizedBox(height: 16),
+    SizedBox(width: double.infinity, height: 46, child: FilledButton.icon(onPressed: _saving ? null : _save, icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_outlined), label: Text(_saving ? 'Saving…' : 'Save Profile'))),
+  ]));
 
-    return PoultryAppShell(
-      title: 'My Profile',
-      subtitle: 'Personal account information',
-      onBack: () => Navigator.maybePop(context),
-      child: content,
-    );
+  Future<void> _showEditDetails() async {
+    await showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.viewInsetsOf(context).bottom + 24), child: _profileEditCard()));
   }
 
-  Widget _field(TextEditingController controller, String label, IconData icon, {TextInputType? keyboard, bool readOnly = false}) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboard,
-      readOnly: readOnly,
-      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: const OutlineInputBorder()),
-    );
+  Future<void> _showSecurityInfo() async {
+    await showDialog<void>(context: context, builder: (_) => AlertDialog(title: const Text('Account & security'), content: const Text('Your email address is your sign-in identity. Role and flock permissions are managed separately by the farm administrator.'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))]));
   }
+
+  Widget _field(TextEditingController controller, String label, IconData icon, {TextInputType? keyboard, bool readOnly = false}) => TextField(controller: controller, keyboardType: keyboard, readOnly: readOnly, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: const OutlineInputBorder()));
 }

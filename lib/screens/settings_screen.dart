@@ -20,6 +20,7 @@ import '../services/backup_file_saver.dart';
 import '../services/farm_config.dart';
 import '../services/bv300_metrics_pdf_service.dart';
 import '../services/poultry_standard_prompt.dart';
+import '../services/market_config.dart';
 import '../widgets/app_shell.dart';
 import 'expense_records_screen.dart';
 import 'admin_panel_screen.dart';
@@ -27,7 +28,13 @@ import 'profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool embedded;
-  const SettingsScreen({super.key, this.embedded = false});
+  final VoidCallback? onOpenProfile;
+
+  const SettingsScreen({
+    super.key,
+    this.embedded = false,
+    this.onOpenProfile,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -49,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   TimeOfDay _reminderTime = const TimeOfDay(hour: 20, minute: 0);
   TimeOfDay _secondReminderTime = const TimeOfDay(hour: 22, minute: 0);
   int _selectedSetting = 0;
+  String _selectedMarketId = 'ajmer';
   final Set<String> _selectedMetricKeys = <String>{'hdep', 'hhpe', 'fcr_mass', 'water_feed'};
   final List<Map<String, dynamic>> _customStandardProfiles = <Map<String, dynamic>>[];
 
@@ -57,6 +65,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadConfig();
     _loadCustomStandardProfiles();
+    _loadMarket();
+  }
+
+  Future<void> _loadMarket() async {
+    await MarketConfig.instance.load();
+    if (mounted) setState(() => _selectedMarketId = MarketConfig.instance.selectedId);
+  }
+
+  Future<void> _saveMarket(String id) async {
+    await MarketConfig.instance.setMarket(id);
+    if (mounted) {
+      setState(() => _selectedMarketId = id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Market changed to ${MarketConfig.instance.selected.label}.')),
+      );
+    }
   }
 
   Future<void> _loadCustomStandardProfiles() async {
@@ -634,6 +658,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _notificationsPanel(),
       _dataManagementPanel(),
       const AdminPanelScreen(embedded: true, adminOnly: true, showSuppliers: true, showMembers: false),
+      _marketPanel(),
     ];
 
     final content = LayoutBuilder(
@@ -647,8 +672,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
             children: [
               _adminProfileCard(context),
-              const SizedBox(height: 12),
-              _settingsHero(),
               const SizedBox(height: 14),
               const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('ADMIN MENU', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: Color(0xFF7A8B83)))),
               const SizedBox(height: 8),
@@ -666,13 +689,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               _adminProfileCard(context),
               const SizedBox(height: 14),
-              _settingsHero(),
-              const SizedBox(height: 14),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(width: 270, child: _settingsCategoryList()),
+                    SizedBox(
+                      width: 270,
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _settingsCategoryList(),
+                      ),
+                    ),
                     const SizedBox(width: 16),
                     Expanded(child: SingleChildScrollView(child: body)),
                   ],
@@ -703,7 +730,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+        onTap: widget.onOpenProfile ??
+              () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(children: [
@@ -729,43 +757,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _settingsHero() => Container(
-        padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFE8F7EF), Color(0xFFF7FBF8)],
+  Future<void> _openMobileAdminSection(int index) async {
+    final panels = <Widget>[
+      _flockPerformanceMetricsPanel(),
+      _accountsPanel(),
+      _feedCatalogPanel(),
+      _categoriesPanel(),
+      _notificationsPanel(),
+      _dataManagementPanel(),
+      const AdminPanelScreen(embedded: true, adminOnly: true, showSuppliers: true, showMembers: false),
+      _marketPanel(),
+    ];
+    if (index < 0 || index >= panels.length || !mounted) return;
+    final itemTitles = <String>[
+      'Flock Performance', 'Accounts', 'Feed Catalog', 'Categories',
+      'Notifications', 'Data Management', 'Suppliers', 'Market',
+    ];
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Scaffold(
+        backgroundColor: const Color(0xFFF3F7F4),
+        appBar: AppBar(
+          title: Text(itemTitles[index]),
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF162A21),
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 30),
+            child: panels[index],
           ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFD7E9DE)),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0E9F6E),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.settings_outlined, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Admin', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF162A21))),
-                  SizedBox(height: 3),
-                  Text('Manage your farm, preferences and administration', style: TextStyle(fontSize: 11, color: Color(0xFF60736A))),
-                ],
-              ),
-            ),
-            const Icon(Icons.tune_outlined, color: Color(0xFF0E9F6E)),
-          ],
-        ),
-      );
+      ),
+    ));
+  }
 
   Widget _settingsCategoryList({bool compact = false}) {
     const items = <_SettingsCategory>[
@@ -776,6 +801,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _SettingsCategory('Notifications', 'Flock notification settings', Icons.notifications_active_outlined, Color(0xFFEA580C)),
       _SettingsCategory('Data Management', 'Backup, import and export', Icons.storage_outlined, Color(0xFF2563EB)),
       _SettingsCategory('Suppliers', 'Manage supplier contacts and categories', Icons.local_shipping_outlined, Color(0xFF0EA5A4)),
+      _SettingsCategory('Market', 'Choose your poultry price market', Icons.storefront_outlined, Color(0xFF0891B2)),
     ];
 
     final list = Column(
@@ -791,7 +817,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
-                onTap: () => setState(() => _selectedSetting = index),
+                onTap: () {
+                  if (compact) {
+                    _openMobileAdminSection(index);
+                  } else {
+                    setState(() => _selectedSetting = index);
+                  }
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1193,6 +1225,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
         );
       },
+    );
+  }
+
+  Widget _marketPanel() {
+    final selected = MarketConfig.markets.firstWhere(
+      (market) => market.id == _selectedMarketId,
+      orElse: () => MarketConfig.markets.first,
+    );
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _panelTitle('Market', 'Choose the Indian market used for poultry price updates', Icons.storefront_outlined),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            value: selected.id,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Market',
+              prefixIcon: Icon(Icons.location_on_outlined),
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final market in MarketConfig.markets)
+                DropdownMenuItem<String>(
+                  value: market.id,
+                  child: Text(market.label),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) _saveMarket(value);
+            },
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F7F3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, size: 19, color: Color(0xFF0891B2)),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Market prices will use ${selected.label} as the selected market. You can change this anytime.',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF45665A)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

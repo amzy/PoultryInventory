@@ -1,8 +1,17 @@
 {
   "name": "poultry-inventory-functions",
-  "private": true,
-  "engines": { "node": "20" },
+  "description": "Server-side market price synchronization for OvalOasis Poultry Inventory",
+  "scripts": {
+    "lint": "node --check index.js"
+  },
+  "engines": {
+    "node": "20"
+  },
   "main": "index.js",
-  "scripts": { "lint": "node --check index.js" },
-  "dependencies": { "firebase-admin": "^13.5.0", "firebase-functions": "^6.4.0", "luxon": "^3.6.1" }
+  "dependencies": {
+    "firebase-admin": "^13.5.0",
+    "firebase-functions": "^6.4.0",
+    "luxon": "^3.7.2"
+  },
+  "private": true
 }

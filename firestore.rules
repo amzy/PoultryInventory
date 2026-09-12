@@ -92,6 +92,13 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Server-synchronized NECC market prices. Clients can read the live feed
+    // but cannot write or spoof market prices. Cloud Functions use Admin SDK.
+    match /market_prices/{marketId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     match /app/{docId} {
       allow read: if signedIn();
       allow create: if isAdmin() && docId == 'config' && !exists(appConfig()) && request.resource.data.ownerUid == userId();

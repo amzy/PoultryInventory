@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/expense_sales_log.dart';
 import '../providers/poultry_provider.dart';
 import '../widgets/app_shell.dart';
 import '../services/farm_config.dart';
 import '../services/bv300_analytics_service.dart';
+import '../services/market_config.dart';
+import '../services/market_price_service.dart';
 import 'log_form_screen.dart';
 import 'log_detail_screen.dart';
 import 'expense_sales_form_screen.dart';
@@ -48,11 +51,54 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   Future<List<Map<String, dynamic>>>? _pendingInvitationsFuture;
   String _expenseLoadRequestedForFlock = '';
   bool _expenseLoadScheduled = false;
+  String _selectedMarketName = 'Ajmer';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadSelectedMarket();
+  }
+
+  Future<void> _loadSelectedMarket() async {
+    await MarketConfig.instance.load();
+    if (!mounted) return;
+    final marketId = MarketConfig.instance.selected.id;
+    setState(() => _selectedMarketName = MarketConfig.instance.selected.name);
+
+    // The scheduled collector supplies the normal daily update. On a new
+    // installation, however, there may be no market_prices document yet.
+    // Let an admin bootstrap the first value immediately; the Firestore
+    // listener below will update the card as soon as the server writes it.
+    if (context.read<PoultryProvider>().isAdmin) {
+      await MarketPriceService.instance.refreshIfMissing(marketId);
+    }
+  }
+
+  void _openMarketPrice(MarketPrice? price) {
+    final market = MarketConfig.instance.selected;
+    final uri = price?.sourceUrl.isNotEmpty == true
+        ? Uri.tryParse(price!.sourceUrl)
+        : null;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('${market.name} Market Price'),
+        content: price?.isAvailable == true
+            ? Text(
+                'NECC reference rate: ₹${price!.todayPrice!.toStringAsFixed(2)} per egg\n\n'
+                'Yesterday: ${price.yesterdayPrice == null ? '—' : '₹${price.yesterdayPrice!.toStringAsFixed(2)}'}\n'
+                'Change: ${price.change == null ? '—' : '${price.change! >= 0 ? '+' : ''}₹${price.change!.toStringAsFixed(2)}'}\n'
+                'Updated: ${price.dateKey.isEmpty ? 'latest available' : price.dateKey}',
+              )
+            : const Text('The live market price is not available yet. The server will retry the daily market feed.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          if (uri != null)
+            TextButton(onPressed: () { Navigator.pop(context); launchUrl(uri, mode: LaunchMode.externalApplication); }, child: const Text('Open source')),
+        ],
+      ),
+    );
   }
 
   @override
@@ -165,7 +211,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       case 9:
         return const SuppliersScreen(key: ValueKey('suppliers'));
       case 10:
-        return const SettingsScreen(embedded: true, key: ValueKey('settings'));
+        return SettingsScreen(
+          embedded: true,
+          onOpenProfile: () => _navigate(12),
+          key: const ValueKey('settings'),
+        );
       case 11:
         return const StandardsCalendarScreen(embedded: true, key: ValueKey('standards-calendar'));
       case 12:
@@ -436,6 +486,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       ('Flock Age', '${FarmConfig.flockAgeOnDate(DateTime.now(), startDate: p.farmConfig.flockStartDate)} d', Icons.timelapse_outlined, const Color(0xFF7C3AED), null),
       ('Eggs', NumberFormat('#,##0').format(p.totalEggs), Icons.egg_alt_outlined, const Color(0xFFF59E0B), null),
       ('Feed', '${p.totalFeedKg.toStringAsFixed(0)} kg', Icons.inventory_2_outlined, const Color(0xFF15803D), null),
+      ('Today Price', 'Live market', Icons.currency_rupee_outlined, const Color(0xFF2563EB), null),
       ('Standards', 'BV300', Icons.event_note_outlined, const Color(0xFF0891B2), () => _navigate(11)),
       ('Grit', _gritMetricValue(p), Icons.scatter_plot_outlined, const Color(0xFF9A6B22), null),
       ('Laying %', '${p.latestLayingPercentage.toStringAsFixed(1)}%', Icons.show_chart_outlined, const Color(0xFF0E9F6E), () => _navigate(0)),
@@ -450,10 +501,80 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         SizedBox(width: w, child: _birdsCard(p, compact: true)),
         ...items.map((e) => SizedBox(
           width: w,
-          child: _metricCard(e.$1, e.$2, e.$3, e.$4, compact: true, onTap: e.$5),
+          child: e.$1 == 'Today Price'
+              ? _marketPriceCard(compact: true)
+              : _metricCard(e.$1, e.$2, e.$3, e.$4, compact: true, onTap: e.$5),
         )),
       ]);
     });
+  }
+
+  Widget _marketPriceCard({bool compact = false}) {
+    final market = MarketConfig.instance.selected;
+    return StreamBuilder<MarketPrice?>(
+      stream: MarketPriceService.instance.watchMarket(market.id),
+      builder: (context, snap) {
+        final price = snap.data;
+        final available = price?.isAvailable == true;
+        final change = price?.change ?? 0.0;
+        final isUp = change > 0;
+        final isDown = change < 0;
+        final trendColor = isUp
+            ? const Color(0xFF16A34A)
+            : isDown
+                ? const Color(0xFFDC2626)
+                : const Color(0xFF64748B);
+        final trendIcon = isUp
+            ? Icons.arrow_upward_rounded
+            : isDown
+                ? Icons.arrow_downward_rounded
+                : Icons.remove_rounded;
+        final trendText = !available
+            ? (snap.connectionState == ConnectionState.waiting ? 'Loading live price…' : 'Price unavailable')
+            : price!.change == null
+                ? 'First live price'
+                : change == 0
+                    ? '₹0.00 • 0.0% unchanged'
+                    : '${isUp ? '+' : ''}₹${change.toStringAsFixed(2)} • ${price.percent!.abs().toStringAsFixed(1)}%';
+
+        return InkWell(
+          borderRadius: BorderRadius.circular(13),
+          onTap: () => _openMarketPrice(price),
+          child: AppCard(
+            padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 14, vertical: compact ? 9 : 14),
+            child: Row(children: [
+              Container(
+                width: compact ? 32 : 40,
+                height: compact ? 32 : 40,
+                decoration: BoxDecoration(
+                  color: trendColor.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(compact ? 9 : 11),
+                ),
+                child: Icon(trendIcon, color: trendColor, size: compact ? 18 : 22),
+              ),
+              SizedBox(width: compact ? 7 : 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    available ? '₹${price!.todayPrice!.toStringAsFixed(2)}/egg' : 'Live price…',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: compact ? 15 : 19, fontWeight: FontWeight.w800, color: const Color(0xFF12251D)),
+                  ),
+                  const SizedBox(height: 1),
+                  Row(children: [
+                    Icon(trendIcon, size: compact ? 12 : 14, color: trendColor),
+                    const SizedBox(width: 2),
+                    Flexible(child: Text(trendText, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 9 : 10.5, fontWeight: FontWeight.w700, color: trendColor))),
+                  ]),
+                  Text('${market.name} • ${available ? 'updated ${price!.dateKey}' : 'waiting for server update'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: compact ? 8.5 : 10, color: const Color(0xFF6A7D73))),
+                ]),
+              ),
+              Icon(Icons.chevron_right, size: 16, color: trendColor),
+            ]),
+          ),
+        );
+      },
+    );
   }
 
   String _gritMetricValue(PoultryProvider p) {

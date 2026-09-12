@@ -47,3 +47,7 @@ Templates support `{memberName}`, `{flockName}`, `{breedName}`, and `{date}`. Ea
 ## One-time legacy flock migration
 
 If this Firebase project contains records created before flock support and no flock exists yet, use `scripts/README_ONE_TIME_MIGRATION.md` to create the initial flock and map the legacy Daily Logs and Expense Records. This is a one-time migration and should be removed after successful verification.
+
+## Live market prices
+
+Dashboard market prices are synchronized server-side by Firebase Cloud Functions into `market_prices/{marketId}`. See `MARKET_PRICE_SERVICE.md` for the mKisan API secret and scheduled-refresh deployment steps.

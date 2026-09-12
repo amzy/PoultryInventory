@@ -16,6 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "cloud_firestore", path: "../.packages/cloud_firestore-6.9.0"),
+        .package(name: "cloud_functions", path: "../.packages/cloud_functions-6.4.0"),
         .package(name: "file_picker", path: "../.packages/file_picker-8.3.7"),
         .package(name: "firebase_auth", path: "../.packages/firebase_auth-6.6.1"),
         .package(name: "firebase_core", path: "../.packages/firebase_core-4.14.0"),
@@ -34,6 +35,7 @@ let package = Package(
             name: "FlutterGeneratedPluginSwiftPackage",
             dependencies: [
                 .product(name: "cloud-firestore", package: "cloud_firestore"),
+                .product(name: "cloud-functions", package: "cloud_functions"),
                 .product(name: "file-picker", package: "file_picker"),
                 .product(name: "firebase-auth", package: "firebase_auth"),
                 .product(name: "firebase-core", package: "firebase_core"),

@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/poultry_provider.dart';
-import '../screens/profile_screen.dart';
 
 class AppNavItem {
   final String label;
@@ -52,8 +51,8 @@ class PoultryAppShell extends StatelessWidget {
   });
 
   List<int> _visibleIndices(PoultryProvider provider) {
-    if (provider.isAdmin) return List<int>.generate(poultryNavItems.length, (i) => i).where((i) => i != 11).toList();
-    final result = <int>[0, 2, 12];
+    if (provider.isAdmin) return List<int>.generate(poultryNavItems.length, (i) => i).where((i) => i != 11 && i != 12).toList();
+    final result = <int>[0, 2];
     const gated = <int, String>{
       1: 'reports',
       3: 'medical',
@@ -214,10 +213,6 @@ class _DesktopSidebar extends StatelessWidget {
             const SizedBox(height: 8),
             const Text('Poultry Inventory', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: _UserProfileTile(onTap: onNavigate == null ? null : () => onNavigate!(12)),
-            ),
             const SizedBox(height: 14),
             Expanded(
               child: ListView.builder(
@@ -271,70 +266,7 @@ class _LogoutTile extends StatelessWidget {
   }
 }
 
-class _UserProfileTile extends StatelessWidget {
-  final VoidCallback? onTap;
-  const _UserProfileTile({this.onTap});
 
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName?.trim();
-    final email = user?.email?.trim();
-    final name = (displayName == null || displayName.isEmpty) ? 'User' : displayName;
-    final photoUrl = user?.photoURL;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap ?? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .08),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 36,
-              height: 36,
-              child: ClipOval(
-                child: photoUrl == null
-                    ? Container(
-                        color: Colors.white24,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.person, color: Colors.white, size: 19),
-                      )
-                    : Image.network(
-                        photoUrl,
-                        width: 36,
-                        height: 36,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.white24,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.person, color: Colors.white, size: 19),
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-                  const SizedBox(height: 2),
-                  Text(email ?? 'Firebase secured', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white60, fontSize: 9.5)),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.white54, size: 17),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _NavTile extends StatelessWidget {
   final AppNavItem item;

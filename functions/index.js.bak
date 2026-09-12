@@ -1,0 +1,157 @@
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
+const admin = require('firebase-admin');
+
+admin.initializeApp();
+const db = admin.firestore();
+const MKISAN_API_KEY = defineSecret('MKISAN_API_KEY');
+
+const MARKETS = [
+  { id: 'ajmer', name: 'Ajmer', city: 'ajmer', sourceSlug: 'ajmer-egg-rates' },
+  { id: 'jaipur', name: 'Jaipur', city: 'jaipur', sourceSlug: 'jaipur-egg-rates' },
+  { id: 'jodhpur', name: 'Jodhpur', city: 'jodhpur', sourceSlug: 'jodhpur-egg-rates' },
+  { id: 'kota', name: 'Kota', city: 'kota', sourceSlug: 'kota-egg-rates' },
+  { id: 'udaipur', name: 'Udaipur', city: 'udaipur', sourceSlug: 'udaipur-egg-rates' },
+  { id: 'delhi', name: 'Delhi', city: 'delhi', sourceSlug: 'delhi-egg-rates' },
+  { id: 'ahmedabad', name: 'Ahmedabad', city: 'ahmedabad', sourceSlug: 'ahmedabad-egg-rates' },
+  { id: 'mumbai', name: 'Mumbai', city: 'mumbai', sourceSlug: 'mumbai-egg-rates' },
+];
+
+function istDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date);
+}
+
+function asNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function fetchMkisan(market, apiKey) {
+  if (!apiKey) return null;
+  const url = new URL('https://mkisan.net/wp-json/mkisan/v1/egg-rates');
+  url.searchParams.set('city', market.city);
+  const response = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+  if (!response.ok) throw new Error(`MKisan API ${response.status}`);
+  const json = await response.json();
+  const data = json?.data;
+  const rate = asNumber(data?.rate);
+  if (rate == null) throw new Error('MKisan response did not contain a valid rate');
+  return {
+    today: rate,
+    source: 'mKisan API / NECC',
+    sourceUrl: 'https://mkisan.net/en/egg-rate',
+    sourceDate: data?.date || istDateKey(),
+  };
+}
+
+async function fetchEggRatesPage(market) {
+  const url = `https://eggrates.in/${market.sourceSlug}`;
+  const response = await fetch(url, { headers: { 'User-Agent': 'OvalOasis-PoultryInventory/1.0' } });
+  if (!response.ok) throw new Error(`EggRates.in ${response.status}`);
+  const html = await response.text();
+  // The city pages expose the NECC wholesale value as "₹X per egg".
+  const matches = [...html.matchAll(/₹\s*([0-9]+(?:\.[0-9]+)?)\s*per\s*egg/gi)];
+  const rate = matches.length ? asNumber(matches[0][1]) : null;
+  if (rate == null) throw new Error('EggRates.in page did not contain a parseable egg rate');
+  return {
+    today: rate,
+    source: 'EggRates.in / NECC',
+    sourceUrl: url,
+    sourceDate: istDateKey(),
+  };
+}
+
+async function syncMarket(market, apiKey) {
+  let live;
+  let providerError = '';
+  try {
+    live = await fetchMkisan(market, apiKey);
+  } catch (error) {
+    providerError = error.message || String(error);
+  }
+  if (!live) {
+    try {
+      live = await fetchEggRatesPage(market);
+    } catch (error) {
+      providerError = providerError ? `${providerError}; ${error.message || error}` : (error.message || String(error));
+    }
+  }
+
+  const ref = db.collection('market_prices').doc(market.id);
+  const previousSnap = await ref.get();
+  const previous = previousSnap.exists ? asNumber(previousSnap.data()?.todayPrice) : null;
+
+  if (!live) {
+    await ref.set({
+      marketId: market.id,
+      marketName: market.name,
+      status: 'unavailable',
+      error: providerError || 'No live market price source available',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { market: market.name, status: 'unavailable' };
+  }
+
+  const change = previous == null ? null : live.today - previous;
+  const percent = previous == null || previous === 0 ? null : (change / previous) * 100;
+
+  await ref.set({
+    marketId: market.id,
+    marketName: market.name,
+    todayPrice: live.today,
+    yesterdayPrice: previous,
+    change,
+    percent,
+    pricePerTray: live.today * 30,
+    pricePer100: live.today * 100,
+    dateKey: live.sourceDate || istDateKey(),
+    source: live.source,
+    sourceUrl: live.sourceUrl,
+    status: 'live',
+    checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return { market: market.name, status: 'live', today: live.today, change };
+}
+
+async function syncAllMarkets() {
+  const apiKey = MKISAN_API_KEY.value();
+  const results = [];
+  for (const market of MARKETS) {
+    results.push(await syncMarket(market, apiKey));
+  }
+  return results;
+}
+
+// NECC rates are normally refreshed in the morning. This scheduled backend
+// keeps Firestore current for both web and mobile clients without exposing an
+// API key to Flutter.
+exports.syncEggMarketPrices = onSchedule({
+  schedule: '15 6 * * *',
+  timeZone: 'Asia/Kolkata',
+  region: 'asia-south1',
+  secrets: [MKISAN_API_KEY],
+  timeoutSeconds: 120,
+  memory: '256MiB',
+}, async () => {
+  await syncAllMarkets();
+});
+
+// Admin-only manual refresh is useful after deployment or when a new daily
+// rate is published earlier than the scheduled refresh.
+exports.refreshEggMarketPrices = onCall({
+  region: 'asia-south1',
+  secrets: [MKISAN_API_KEY],
+  timeoutSeconds: 120,
+  memory: '256MiB',
+}, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const profile = await db.collection('users').doc(request.auth.uid).collection('profile').doc('account').get();
+  if (profile.data()?.role !== 'admin') throw new HttpsError('permission-denied', 'Only farm admins can refresh market prices.');
+  return { results: await syncAllMarkets() };
+});
