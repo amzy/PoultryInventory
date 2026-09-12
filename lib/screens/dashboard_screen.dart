@@ -492,9 +492,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       ('Laying %', '${p.latestLayingPercentage.toStringAsFixed(1)}%', Icons.show_chart_outlined, const Color(0xFF0E9F6E), () => _navigate(0)),
     ];
     return LayoutBuilder(builder: (context, c) {
-      // Keep the dashboard summary compact: 3 columns on larger screens,
-      // 2 columns on phones instead of one very wide card per metric.
-      final count = wide ? 3 : 2;
+      // Keep the dashboard summary compact: 6 columns on larger screens
+      // so the key metric cards stay narrow and leave more room for the
+      // charts/content below; 2 columns on phones for readability.
+      final count = wide ? 6 : 2;
       final gap = 8.0;
       final w = (c.maxWidth - (count - 1) * gap) / count;
       return Wrap(spacing: gap, runSpacing: gap, children: [

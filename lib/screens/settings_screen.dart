@@ -651,6 +651,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     final panels = <Widget>[
+      _flockConfigurationPanel(),
       _flockPerformanceMetricsPanel(),
       _accountsPanel(),
       _feedCatalogPanel(),
@@ -759,6 +760,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _openMobileAdminSection(int index) async {
     final panels = <Widget>[
+      _flockConfigurationPanel(),
       _flockPerformanceMetricsPanel(),
       _accountsPanel(),
       _feedCatalogPanel(),
@@ -770,7 +772,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
     if (index < 0 || index >= panels.length || !mounted) return;
     final itemTitles = <String>[
-      'Flock Performance', 'Accounts', 'Feed Catalog', 'Categories',
+      'Flock Configuration', 'Flock Performance', 'Accounts', 'Feed Catalog', 'Categories',
       'Notifications', 'Data Management', 'Suppliers', 'Market',
     ];
     await Navigator.of(context).push(MaterialPageRoute(
@@ -794,6 +796,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _settingsCategoryList({bool compact = false}) {
     const items = <_SettingsCategory>[
+      _SettingsCategory('Flock Configuration', 'Add, switch, manage and share flocks', Icons.home_work_outlined, Color(0xFF0E9F6E)),
       _SettingsCategory('Flock Performance', 'BV300 KPIs and PDF export', Icons.insights_outlined, Color(0xFF7C3AED)),
       _SettingsCategory('Accounts', 'Saved expense accounts', Icons.account_balance_wallet_outlined, Color(0xFF0891B2)),
       _SettingsCategory('Feed Catalog', 'Shared feed items', Icons.grass_outlined, Color(0xFFF59E0B)),
