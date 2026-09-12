@@ -2,7 +2,7 @@
 
 The Flutter Web application uses the custom production domain:
 
-https://ovaloasis.in/
+https://www.ovaloasis.in/
 
 ## Flutter Web base path
 
